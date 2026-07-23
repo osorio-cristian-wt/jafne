@@ -1,0 +1,22 @@
+# Ejemplo (propuesta, no congelada) de declaración de entorno para JAFNE.
+# Cada repositorio incluye su propio engineering.yaml en la raíz.
+# El Workspace Broker lo traduce a un workspace concreto.
+# Ver investigacion/orquestacion-entornos/research.md
+
+project: Gustagua
+
+workspace:
+  image: flutter:latest
+  cpu: 4
+  ram: 8G
+
+services:
+  - postgres
+  - redis
+  - supabase
+
+tools:
+  - flutter
+  - dart
+  - adb
+  - git

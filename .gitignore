@@ -1,0 +1,28 @@
+# Secrets / entornos
+.env
+.env.*
+*.pem
+*.key
+
+# Dependencias (según stack que se elija)
+node_modules/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+target/
+dist/
+build/
+
+# Artefactos de workspaces / runtime
+.jafne/
+workspaces/
+*.log
+*.snapshot
+
+# Sistema operativo / editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
