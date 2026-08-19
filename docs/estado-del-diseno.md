@@ -92,10 +92,15 @@ Misma relación que un Asunto tiene entre su `historial.jsonl` y su `meta.yaml`.
 | Despertar vencido | **No se repone**: el reloj caído no dispara lo atrasado al levantar | ADR-0035 |
 | Cuántos relojes | Uno por almacén: candado + id de Asunto derivado de entrada y fecha | ADR-0035 |
 | Dictado por voz | Botón de voz a texto en el chat del panel, con **Whisper local** | [ADR-0036](./adr/0036-dictado-por-voz-con-whisper-local.md) |
-| Dónde va el audio | A ningún lado: no sale de la máquina y **no se persiste** | ADR-0036 |
+| Dónde va el audio | No sale de **las máquinas del Usuario** y **no se persiste** | ADR-0036 + [ADR-0037](./adr/0037-el-dictado-puede-delegarse-a-un-nodo-con-gpu.md) |
 | Modelo de voz | El grande (`large-v3`) por defecto; se declara, no se adivina | ADR-0036 |
 | Si falta el motor de voz | Se **rechaza** y se dice qué falta. Nunca se degrada a un modelo más chico | ADR-0036 |
 | El dictado y el estado | Transcribir es cómputo, no escritura: el panel **sigue** siendo solo lectura | ADR-0036 + ADR-0035 |
+| Dónde transcribe | Acá por defecto; con `$JAFNE_VOZ_NODO` en un nodo con GPU de la malla | ADR-0037 |
+| Qué corre el nodo | El **mismo JAFNE** (`jafne voz`), no un servidor de terceros | ADR-0037 |
+| Qué sabe el nodo | Nada: presta cómputo, no lee `~/.jafne/` y no escribe estado | ADR-0037 |
+| Si el nodo no contesta | Se **rechaza**. Nunca cae a la CPU local en silencio | ADR-0037 |
+| Acceso al nodo | ADR-0020 completo: nunca todas las interfaces, token fuera de loopback | ADR-0037 + ADR-0020 |
 
 > ADR-0035 **reemplaza** a ADR-0029, que había puesto el reloj adentro del panel. Lo que
 > sobrevive es la cola única con dos productores y `programado.yaml`; lo que se revierte es

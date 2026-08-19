@@ -26,6 +26,7 @@ fuentes:
   - docs/adr/0029-el-reloj-corre-en-el-proceso-del-panel.md
   - docs/adr/0035-el-reloj-corre-en-su-propio-proceso.md
   - docs/adr/0036-dictado-por-voz-con-whisper-local.md
+  - docs/adr/0037-el-dictado-puede-delegarse-a-un-nodo-con-gpu.md
   - docs/adr/0030-tamanos-de-cerebro-catalogo-comun-entre-proveedores.md
   - docs/adr/0031-contrato-de-sesion-reanudable.md
   - docs/adr/0032-driver-de-la-clase-generado.md
@@ -133,7 +134,10 @@ flowchart TD
     ([ADR-0013](./adr/0013-panel-web-como-dashboard-visual.md)). El **estado** de Asuntos
     y contenedores lo sigue viendo en solo lectura. Ese chat se puede **dictar**, con
     transcripción local: el audio no sale de la máquina ni se persiste, y transcribir no
-    es escribir estado ([ADR-0036](./adr/0036-dictado-por-voz-con-whisper-local.md)).
+    es escribir estado ([ADR-0036](./adr/0036-dictado-por-voz-con-whisper-local.md)). Si
+    hay una máquina con GPU en la malla, esa transcripción se le puede delegar sin salir
+    de las máquinas del Usuario
+    ([ADR-0037](./adr/0037-el-dictado-puede-delegarse-a-un-nodo-con-gpu.md)).
 13. **Planificar es trabajo regular.** El Encargado puede crear sprints en medio de una
     tarea, consumiendo la gestión de sprints como capacidad MCP
     ([ADR-0014](./adr/0014-gestion-de-sprints-via-mcp.md)).

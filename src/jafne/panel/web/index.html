@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JAFNE — panel</title>
+  <link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+  <header class="barra">
+    <div class="marca">
+      <span class="logo">J</span>
+      <div>
+        <h1>JAFNE</h1>
+        <p class="lema">Jarvis Assistant For N&rarr; Software Engineering</p>
+      </div>
+    </div>
+    <div class="salud" id="salud" aria-live="polite"></div>
+  </header>
+
+  <nav class="miga" id="miga" hidden></nav>
+
+  <main id="vista"></main>
+
+  <footer class="pie">
+    <p>
+      El estado de Asuntos y contenedores se muestra en solo lectura: lo escriben el
+      Encargado y el Workspace Broker (ADR-0008).
+    </p>
+  </footer>
+
+  <template id="tpl-chat">
+    <section class="tarjeta chat">
+      <header class="tarjeta-cab">
+        <h2 data-rol="titulo"></h2>
+        <span class="etiqueta" data-rol="modo"></span>
+      </header>
+      <div class="chat-hilo" data-rol="hilo"></div>
+      <form class="chat-form" data-rol="form">
+        <input type="text" data-rol="entrada" placeholder="Escribí un mensaje…" autocomplete="off">
+        <button type="button" class="dictar" data-rol="dictar" disabled
+                aria-label="Dictar el mensaje" title="Consultando el dictado…">🎙</button>
+        <button type="submit">Enviar</button>
+      </form>
+      <p class="chat-aviso" data-rol="aviso" aria-live="polite" hidden></p>
+    </section>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -22,6 +22,7 @@ fuentes:
   - docs/adr/0034-el-adaptador-usa-la-sesion-de-claude-code.md
   - docs/adr/0035-el-reloj-corre-en-su-propio-proceso.md
   - docs/adr/0036-dictado-por-voz-con-whisper-local.md
+  - docs/adr/0037-el-dictado-puede-delegarse-a-un-nodo-con-gpu.md
   - src/jafne/pendientes.py
 verificado: 2026-08-19
 ---
@@ -100,8 +101,25 @@ y el botón aparece deshabilitado con el motivo:
 JAFNE_VOZ_MODELO=medium jafne panel        # el default es large-v3
 ```
 
-El audio se graba en el navegador, se transcribe en esta máquina y se descarta: no sale
-de acá ni toca el disco. El texto va al campo del chat, para revisarlo antes de enviarlo.
+El audio se graba en el navegador, se transcribe y se descarta: no toca el disco de
+ninguno de los dos lados. El texto va al campo del chat, para revisarlo antes de enviarlo.
+
+Si hay otra máquina en la malla con GPU NVIDIA, el dictado se le puede delegar (ADR-0037).
+En **esa** máquina:
+
+```bash
+jafne voz --host 10.144.0.2 --token <token>     # presta la GPU a la malla
+```
+
+y en la del panel:
+
+```bash
+JAFNE_VOZ_NODO=http://10.144.0.2:8731 JAFNE_VOZ_TOKEN=<token> jafne panel
+```
+
+Sin `$JAFNE_VOZ_NODO` se transcribe acá, que es el default de ADR-0036. Si el nodo está
+apagado el botón aparece deshabilitado con el motivo: no hay caída silenciosa a la CPU
+local, porque un segundo contra catorce es una diferencia que tiene que verse.
 
 Fuera de loopback el panel exige token (ADR-0020):
 
@@ -109,7 +127,7 @@ Fuera de loopback el panel exige token (ADR-0020):
 JAFNE_PANEL_TOKEN=… jafne panel --host <IP-ZeroTier>
 ```
 
-Tests: `.venv/Scripts/python -m pytest` (221 casos, verde al 2026-08-19).
+Tests: `.venv/Scripts/python -m pytest` (240 casos, verde al 2026-08-19).
 
 ## Estructura
 
@@ -126,13 +144,15 @@ src/jafne/
     sesion.py          el contrato neutral de sesión (ADR-0031)
     credenciales.py    estado de la credencial, sin tocarla (ADR-0034)
     despertares.py     la cola de despertares, como función del tiempo (ADR-0035)
-    transcripcion.py   dictado por voz, local y sin persistir nada (ADR-0036)
+    transcripcion.py   dictado por voz: local o delegado (ADR-0036, ADR-0037)
     modelos.py         Proyecto, Cerebro, Asunto, Mensaje, Suscripcion, Ventana
     almacen.py         lectura/escritura de ~/.jafne/ (ADR-0007, ADR-0018, ADR-0025)
     cierre.py          skill de cierre: 5 validaciones + bitácora (ADR-0019, ADR-0021)
   panel/
     api.py             FastAPI: JSON, estáticos y token (ADR-0013, ADR-0020)
     web/               index.html + estilo.css + app.js, sin build (ADR-0015)
+  acceso.py            bind y token, compartidos por panel y nodo (ADR-0020)
+  voz.py               el nodo que presta una GPU a la malla (ADR-0037)
   reloj.py             el proceso del reloj: candado, espera y disparo (ADR-0035)
   cli.py               jafne <comando>
 tests/                 estados, catálogos, señal de saldo, almacén, cierre, reloj, voz y API
@@ -174,7 +194,12 @@ tests/                 estados, catálogos, señal de saldo, almacén, cierre, r
 | Dictado por voz | `GET /api/voz` dice si se puede dictar y con qué; `POST /api/transcribir` devuelve el texto. El modelo se carga **perezoso** y queda caliente: un panel que nadie usó para dictar no paga memoria. | [ADR-0036](./adr/0036-dictado-por-voz-con-whisper-local.md) |
 | Voz: botón del chat | Graba con `MediaRecorder`, manda el audio crudo y pega el texto en el campo —no en el hilo—, para revisarlo antes de enviarlo. Sin motor, o fuera de un contexto seguro, aparece deshabilitado **con el motivo**. | ADR-0036 + ADR-0013 |
 | Voz: sin degradar en silencio | Si falta el paquete o el modelo declarado, responde 501 diciendo qué falta, con `decidido: true`. Nunca sirve una transcripción de un modelo más chico que el pedido. | ADR-0036 + ADR-0032 |
-| CLI | `init`, `proyectos`, `asuntos`, `abrir`, `estado`, `contenedor`, `pregunta`, `anotar`, `historial`, `reabrir`, `cerrar`, `saldo`, `cerebros`, `credencial`, `pendientes`, `panel`, `reloj`. Fuerza UTF-8 en la salida: la consola de Windows es cp1252 y `jafne pendientes` moría con el `→` del hop 4. | ADR-0007/0009/0013/0016-0021/0025-0035 |
+| Voz: delegar en un nodo | `$JAFNE_VOZ_NODO` manda el audio a otra máquina de la malla; sin declararlo se transcribe acá. El panel muestra en cuál se transcribió. | [ADR-0037](./adr/0037-el-dictado-puede-delegarse-a-un-nodo-con-gpu.md) |
+| Voz: el nodo | `jafne voz` levanta dos endpoints y nada más: no lee `~/.jafne/` y no puede escribir estado. Un nodo con `$JAFNE_VOZ_NODO` puesto transcribe igual, no se reenvía a sí mismo. | ADR-0037 |
+| Voz: nodo caído | `NodoInalcanzable` → 501 con el motivo. **No** cae a la CPU local: la diferencia de latencia tiene que verse. | ADR-0037 |
+| Voz: GPU o CPU | `auto` elige CUDA si CTranslate2 la ve, con `float16`; en CPU, `int8`. Declarar `cuda` y que no haya se rechaza. | ADR-0037 |
+| Bind y token compartidos | La comprobación de ADR-0020 es una sola función para el panel y para el nodo: dos servicios con reglas de acceso copiadas terminan con reglas distintas. | ADR-0020 + ADR-0037 |
+| CLI | `init`, `proyectos`, `asuntos`, `abrir`, `estado`, `contenedor`, `pregunta`, `anotar`, `historial`, `reabrir`, `cerrar`, `saldo`, `cerebros`, `credencial`, `pendientes`, `panel`, `reloj`, `voz`. Fuerza UTF-8 en la salida: la consola de Windows es cp1252 y `jafne pendientes` moría con el `→` del hop 4. | ADR-0007/0009/0013/0016-0021/0025-0035 |
 
 ## No implementado, y por qué
 

@@ -1,0 +1,451 @@
+/* Panel de JAFNE (ADR-0013). Sin build: CSS plano, servido por FastAPI. */
+
+:root {
+  --fondo: #f6f7f9;
+  --superficie: #ffffff;
+  --superficie-2: #eef0f4;
+  --borde: #dcdfe6;
+  --texto: #1b1d21;
+  --texto-suave: #5d636e;
+  --acento: #3b5bdb;
+  --acento-suave: #e7ecfd;
+
+  --iniciando: #3b82f6;
+  --interactuando: #16a34a;
+  --esperando: #d97706;
+  --cerrando: #7c3aed;
+  --cerrado: #6b7280;
+  --bloqueado: #b45309;
+  --bloqueado-fondo: #fdf6e7;
+
+  --radio: 12px;
+  --sombra: 0 1px 2px rgba(16, 18, 22, .06), 0 6px 18px rgba(16, 18, 22, .05);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fondo: #101215;
+    --superficie: #191c21;
+    --superficie-2: #21252c;
+    --borde: #2c313a;
+    --texto: #e8eaee;
+    --texto-suave: #9aa2ae;
+    --acento: #7b93f5;
+    --acento-suave: #1d2440;
+    --bloqueado: #e0a94a;
+    --bloqueado-fondo: #2a2213;
+    --sombra: 0 1px 2px rgba(0, 0, 0, .4), 0 6px 18px rgba(0, 0, 0, .3);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--fondo);
+  color: var(--texto);
+  font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+h1, h2, h3 { margin: 0; line-height: 1.25; }
+
+/* ── barra superior ─────────────────────────────────────────────────────── */
+
+.barra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 24px;
+  background: var(--superficie);
+  border-bottom: 1px solid var(--borde);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.marca { display: flex; align-items: center; gap: 12px; }
+
+.logo {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: var(--acento);
+  color: #fff;
+  font-weight: 700;
+  font-size: 19px;
+}
+
+.barra h1 { font-size: 17px; letter-spacing: .02em; }
+.lema { margin: 0; font-size: 12px; color: var(--texto-suave); }
+
+.salud { font-size: 12px; color: var(--texto-suave); text-align: right; }
+.salud code { font-size: 11px; }
+
+/* ── layout ─────────────────────────────────────────────────────────────── */
+
+main {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 24px;
+  display: grid;
+  gap: 20px;
+}
+
+.miga {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 16px 24px 0;
+  font-size: 13px;
+  width: 100%;
+}
+
+.miga a { color: var(--acento); text-decoration: none; }
+.miga a:hover { text-decoration: underline; }
+
+.columnas {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .columnas { grid-template-columns: 1fr; }
+}
+
+.pila { display: grid; gap: 20px; align-content: start; }
+
+/* ── tarjetas ───────────────────────────────────────────────────────────── */
+
+.tarjeta {
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  box-shadow: var(--sombra);
+  overflow: hidden;
+}
+
+.tarjeta-cab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--borde);
+}
+
+.tarjeta-cab h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--texto-suave); }
+.tarjeta-cuerpo { padding: 18px; }
+
+.etiqueta {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--superficie-2);
+  color: var(--texto-suave);
+  white-space: nowrap;
+}
+
+/* ── grilla de proyectos ────────────────────────────────────────────────── */
+
+.grilla {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 16px;
+}
+
+.proyecto {
+  display: block;
+  text-align: left;
+  width: 100%;
+  padding: 18px;
+  background: var(--superficie);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  box-shadow: var(--sombra);
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  transition: border-color .12s, transform .12s;
+}
+
+.proyecto:hover { border-color: var(--acento); transform: translateY(-1px); }
+
+.proyecto h3 { font-size: 16px; }
+.proyecto .ruta {
+  margin: 6px 0 14px;
+  font-size: 12px;
+  color: var(--texto-suave);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-all;
+}
+
+.conteos { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ── chips de estado ────────────────────────────────────────────────────── */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--superficie-2);
+  color: var(--texto-suave);
+}
+
+.chip::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.chip[data-estado="iniciando"] { color: var(--iniciando); }
+.chip[data-estado="interactuando_con_el_usuario"] { color: var(--interactuando); }
+.chip[data-estado="esperando_respuesta"] { color: var(--esperando); }
+.chip[data-estado="cerrando"] { color: var(--cerrando); }
+.chip[data-estado="cerrado"] { color: var(--cerrado); }
+
+/* ── lista de asuntos ───────────────────────────────────────────────────── */
+
+.asuntos { list-style: none; margin: 0; padding: 0; }
+
+.asuntos li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 14px;
+  align-items: center;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--borde);
+}
+
+.asuntos li:last-child { border-bottom: 0; }
+.asuntos .titulo { font-weight: 600; }
+.asuntos .meta {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--texto-suave);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.asuntos .meta code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* ── saldo de suscripciones (ADR-0025) ──────────────────────────────────── */
+
+.suscripcion { margin-bottom: 18px; }
+
+.suscripcion-cab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.suscripcion-cab strong { text-transform: capitalize; }
+
+.suscripcion .fuente {
+  font-size: 11.5px;
+  color: var(--texto-suave);
+  margin-left: auto;
+}
+
+.ventana { margin-bottom: 10px; }
+
+.ventana-cab {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--texto-suave);
+}
+
+.ventana-cab .nombre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--texto);
+}
+
+.barra-saldo {
+  height: 8px;
+  margin: 4px 0 2px;
+  border-radius: 999px;
+  background: var(--superficie-2);
+  overflow: hidden;
+}
+
+.barra-saldo span {
+  display: block;
+  height: 100%;
+  background: var(--interactuando);
+}
+
+/* Solo el cero es inequívoco; el umbral para conmutar sigue sin decidirse. */
+.barra-saldo[data-agotada="true"] span { background: var(--esperando); }
+
+.ventana .fuente { font-size: 11.5px; color: var(--texto-suave); }
+
+/* ── bloques bloqueados por una decisión pendiente ──────────────────────── */
+
+.bloqueado {
+  background: var(--bloqueado-fondo);
+  border: 1px dashed color-mix(in srgb, var(--bloqueado) 45%, transparent);
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-size: 13px;
+  color: var(--texto);
+}
+
+.bloqueado strong { color: var(--bloqueado); }
+.bloqueado .fuente {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--texto-suave);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.pendientes { list-style: none; margin: 0; padding: 0; }
+
+.pendientes li {
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--borde);
+  font-size: 13px;
+}
+
+.pendientes li:last-child { border-bottom: 0; }
+.pendientes .titulo { font-weight: 600; display: block; }
+.pendientes .fuente {
+  font-size: 11.5px;
+  color: var(--texto-suave);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.pendientes .pregunta { margin: 4px 0 0; color: var(--texto-suave); }
+
+/* ── chat ───────────────────────────────────────────────────────────────── */
+
+.chat-hilo {
+  padding: 18px;
+  display: grid;
+  gap: 10px;
+  min-height: 120px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.burbuja {
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  max-width: 85%;
+}
+
+.burbuja.usuario {
+  justify-self: end;
+  background: var(--acento);
+  color: #fff;
+  border-bottom-right-radius: 4px;
+}
+
+.burbuja.sistema {
+  justify-self: start;
+  background: var(--superficie-2);
+  border-bottom-left-radius: 4px;
+}
+
+.chat-form {
+  display: flex;
+  gap: 8px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--borde);
+}
+
+.chat-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  background: var(--fondo);
+  color: var(--texto);
+  font: inherit;
+}
+
+.chat-form input:focus { outline: 2px solid var(--acento-suave); border-color: var(--acento); }
+
+/* Dictado por voz (ADR-0036): local, sin guardar el audio. */
+
+.chat-form .dictar {
+  background: var(--superficie-2);
+  color: var(--texto);
+  padding: 9px 12px;
+  line-height: 1;
+  font-size: 16px;
+}
+
+.chat-form .dictar:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.chat-form .dictar.grabando {
+  background: var(--esperando);
+  color: #fff;
+  animation: latido 1.2s ease-in-out infinite;
+}
+
+.chat-form .dictar.transcribiendo { background: var(--acento-suave); color: var(--acento); }
+
+@keyframes latido {
+  50% { opacity: .55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-form .dictar.grabando { animation: none; }
+}
+
+.chat-aviso {
+  margin: 0;
+  padding: 0 18px 14px;
+  font-size: 12px;
+  color: var(--texto-suave);
+}
+
+.chat-aviso.malo { color: var(--bloqueado); }
+
+button {
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--acento);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover { filter: brightness(1.08); }
+
+.volver {
+  background: none;
+  color: var(--acento);
+  padding: 0;
+  font-weight: 500;
+}
+
+.vacio { color: var(--texto-suave); font-size: 14px; }
+
+.pie {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 8px 24px 40px;
+  font-size: 12px;
+  color: var(--texto-suave);
+}

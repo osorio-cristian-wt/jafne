@@ -93,6 +93,11 @@ El panel deja **dictar** el mensaje del chat en vez de tipearlo. Corre con Whisp
 .venv/Scripts/pip install -e ".[voz]"    # sin esto el botón aparece deshabilitado
 ```
 
+Si hay otra máquina en la malla ZeroTier con GPU NVIDIA, el dictado se le puede delegar
+([ADR-0037](docs/adr/0037-el-dictado-puede-delegarse-a-un-nodo-con-gpu.md)): ahí corre
+`jafne voz` y acá se declara `$JAFNE_VOZ_NODO`. Sin declararlo, transcribe la máquina del
+panel.
+
 ### Iniciar sesión
 
 **JAFNE no tiene login, y es a propósito.** El adaptador maneja la CLI de Claude Code y

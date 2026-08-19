@@ -4,10 +4,12 @@
 *.pem
 *.key
 
-# Dependencias (según stack que se elija)
+# Dependencias y artefactos de build (ADR-0015: Python + FastAPI)
 node_modules/
 __pycache__/
 *.py[cod]
+*.egg-info/
+.pytest_cache/
 .venv/
 venv/
 target/
