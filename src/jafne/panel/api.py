@@ -55,6 +55,7 @@ from ..nucleo import (
     ProyectoDesconocido,
     Suscripcion,
 )
+from ..servicio import ciclo
 from ..pendientes import DecisionPendiente
 from ..pendientes import obtener as obtener_pendiente
 from ..pendientes import todos as pendientes_todos
@@ -88,6 +89,7 @@ def crear_app(ruta_almacen: Path | None = None, token: str | None = None) -> Fas
         title="JAFNE — panel",
         version=__version__,
         description="Dashboard visual de JAFNE (ADR-0013).",
+        lifespan=ciclo,
     )
     app.state.almacen = Almacen(ruta_almacen)
     app.state.token = token

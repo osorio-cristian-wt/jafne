@@ -35,6 +35,7 @@ from .nucleo.transcripcion import (
     AudioInvalido,
     TranscripcionNoDisponible,
 )
+from .servicio import ciclo
 from .nucleo.transcripcion import estado_local as voz_estado
 from .nucleo.transcripcion import transcribir_local as voz_transcribir
 
@@ -54,6 +55,7 @@ def crear_app(token: str | None = None) -> FastAPI:
         title="JAFNE — nodo de voz",
         version=__version__,
         description="Transcripción prestada a la malla (ADR-0037).",
+        lifespan=ciclo,
     )
     app.state.token = token
 

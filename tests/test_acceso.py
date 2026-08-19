@@ -119,3 +119,53 @@ def test_fuera_de_loopback_se_avisa_que_el_microfono_no_va_a_andar():
     assert aviso is not None
     assert "micrófono" in aviso
     assert "ADR-0011" in aviso  # y aclara que el tráfico igual va cifrado
+
+
+# ── ruido del log en Windows (asyncio Proactor) ──────────────────────────────
+
+
+def _contexto_de_corte(mensaje="Exception in callback _ProactorBasePipeTransport._call_connection_lost(None)"):
+    return {"message": mensaje, "exception": ConnectionResetError(10054, "forzada")}
+
+
+def test_el_corte_cosmetico_de_windows_se_reconoce():
+    # asyncio llama shutdown() sobre un socket que el otro lado ya reseteó. La respuesta
+    # ya salió: no hay nada que arreglar, y en un servicio de larga vida es la mayor
+    # fuente de ruido del log.
+    from jafne.servicio import _es_corte_cosmetico
+
+    assert _es_corte_cosmetico(_contexto_de_corte())
+
+
+def test_un_corte_de_conexion_en_otro_lado_no_se_silencia():
+    # Acotado a propósito: perder la conexión contra el nodo de voz a mitad de una
+    # transcripción (ADR-0037) es un hecho que hay que ver.
+    from jafne.servicio import _es_corte_cosmetico
+
+    assert not _es_corte_cosmetico(_contexto_de_corte("Task exception was never retrieved"))
+
+
+def test_cualquier_otro_error_no_se_silencia():
+    from jafne.servicio import _es_corte_cosmetico
+
+    assert not _es_corte_cosmetico(
+        {"message": "algo con _call_connection_lost", "exception": ValueError("otra cosa")}
+    )
+
+
+def test_lo_que_no_es_cosmetico_va_al_manejador_de_siempre():
+    from jafne.servicio import _manejador
+
+    vistos = []
+
+    class BucleFalso:
+        def default_exception_handler(self, contexto):
+            vistos.append(contexto)
+
+    bucle = BucleFalso()
+    _manejador(bucle, _contexto_de_corte())  # cosmético: se descarta
+    assert vistos == []
+
+    grave = {"message": "boom", "exception": RuntimeError("de verdad")}
+    _manejador(bucle, grave)
+    assert vistos == [grave]
