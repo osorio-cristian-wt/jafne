@@ -20,6 +20,11 @@ proceso del agente. `workspace-broker` se afinó dos veces en el mismo día —A
 quién declara el aislamiento, ADR-0032 a qué runtime mapea— hasta quedarse solo con el
 descubrimiento de servicios.
 
+El 2026-08-19 volvió a pasar, y es el ejemplo más limpio: `tls-y-rotacion-de-token`
+llevaba dos preguntas pegadas y ADR-0038 contestó una sola —el TLS—, así que la entrada se
+renombró a `rotacion-de-token` en vez de borrarse. Contestar la mitad y tachar el todo es
+la forma más rápida de que este registro deje de servir.
+
 **Esto no registra trabajo pendiente, sino decisiones pendientes.** Un adaptador decidido
 y todavía no escrito no va acá: va con su propia señal (`nucleo/adaptadores.py`, ADR-0028),
 porque si las dos cosas se mezclan la pregunta *"¿qué falta decidir?"* deja de tener una
@@ -120,13 +125,16 @@ _REGISTRO: tuple[Pendiente, ...] = (
         ),
     ),
     Pendiente(
-        clave="tls-y-rotacion-de-token",
-        titulo="TLS del panel y rotación de su token",
-        bloqueado_por="ADR-0020",
+        clave="rotacion-de-token",
+        titulo="Rotación del token del panel y del nodo de voz",
+        bloqueado_por="ADR-0020 + ADR-0038",
         pregunta=(
-            "Dentro de la malla ZeroTier el tráfico va cifrado, así que el token viaja "
-            "protegido hasta esa frontera. Falta decidir TLS propio del panel, cada cuánto "
-            "rota el token y qué se hace si se filtra."
+            "ADR-0038 contestó la mitad de lo que esta entrada tenía: el panel puede "
+            "servir TLS con una CA propia, y se decidió por qué —desbloquear el micrófono "
+            "del navegador, no agregar confidencialidad, que la malla ya da—. Lo que sigue "
+            "abierto es el token: cada cuánto rota, quién lo rota y qué se hace si se "
+            "filtra. Ahora son dos tokens, uno por servicio, así que la respuesta tiene "
+            "que valer para los dos."
         ),
     ),
     Pendiente(

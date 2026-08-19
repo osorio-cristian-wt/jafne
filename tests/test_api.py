@@ -167,8 +167,12 @@ def test_las_decisiones_pendientes_son_consultables(cliente):
             "chat-asistente",
             "chat-encargado",
             "adaptador-agents",
+            # ADR-0038 contestó el TLS y la entrada se renombró a `rotacion-de-token`:
+            # contestar la mitad y tachar el todo es como este registro deja de servir.
+            "tls-y-rotacion-de-token",
         }
     )
+    assert "rotacion-de-token" in claves
 
 
 # ── autenticación y bind (ADR-0020) ──────────────────────────────────────────

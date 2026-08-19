@@ -354,8 +354,12 @@ def _cmd_voz(args: argparse.Namespace) -> int:
     from . import voz as nodo_voz
     from .nucleo import transcripcion
 
-    estado = transcripcion.estado()
-    print(f"Nodo de voz de JAFNE en http://{args.host}:{args.puerto}")
+    nodo_voz.validar_bind(args.host, nodo_voz.resolver_token(args.token))
+    tls = nodo_voz.resolver_tls(args.cert, args.clave)
+
+    estado = transcripcion.estado_local()
+    esquema = "https" if tls else "http"
+    print(f"Nodo de voz de JAFNE en {esquema}://{args.host}:{args.puerto}")
     print(f"  modelo      {estado.modelo}")
     print(f"  dispositivo {estado.dispositivo} ({estado.computo})")
     if not estado.disponible:
@@ -367,22 +371,41 @@ def _cmd_voz(args: argparse.Namespace) -> int:
             "falta CUDA/cuDNN para que CTranslate2 la vea."
         )
     print(
-        f"\nDel lado del panel: JAFNE_VOZ_NODO=http://{args.host}:{args.puerto}"
+        f"\nDel lado del panel: JAFNE_VOZ_NODO={esquema}://{args.host}:{args.puerto}"
         + ("  JAFNE_VOZ_TOKEN=…" if args.token else "")
     )
-    nodo_voz.servir(host=args.host, puerto=args.puerto, token=args.token)
+    nodo_voz.servir(
+        host=args.host,
+        puerto=args.puerto,
+        token=args.token,
+        cert=args.cert,
+        clave=args.clave,
+    )
     return 0
 
 
 def _cmd_panel(args: argparse.Namespace) -> int:
-    from .panel import servir
+    from .acceso import aviso_sin_tls
+    from .panel import resolver_tls, resolver_token, servir, validar_bind
 
-    print(f"Panel de JAFNE en http://{args.host}:{args.puerto}")
+    # Se valida ADR-0020 y ADR-0038 antes de anunciar nada: si no, la consola muestra una
+    # URL que el panel nunca llegó a servir, y el error queda debajo de la buena noticia.
+    validar_bind(args.host, resolver_token(args.token))
+    tls = resolver_tls(args.cert, args.clave)
+
+    esquema = "https" if tls else "http"
+    print(f"Panel de JAFNE en {esquema}://{args.host}:{args.puerto}")
+    aviso = None if tls else aviso_sin_tls(args.host)
+    if aviso:
+        print()
+        print(f"AVISO: {aviso}")
     servir(
         host=args.host,
         puerto=args.puerto,
         ruta_almacen=getattr(args, "home", None),
         token=args.token,
+        cert=args.cert,
+        clave=args.clave,
     )
     return 0
 
@@ -553,6 +576,8 @@ def construir_parser() -> argparse.ArgumentParser:
         "--token",
         help="Token compartido; obligatorio fuera de loopback. También $JAFNE_VOZ_TOKEN.",
     )
+    p_voz.add_argument("--cert", help="Certificado TLS (ADR-0038). También $JAFNE_VOZ_CERT.")
+    p_voz.add_argument("--clave", help="Clave del certificado. También $JAFNE_VOZ_CLAVE.")
     p_voz.set_defaults(func=_cmd_voz)
 
     p_panel = sub.add_parser("panel", help="Levanta el panel web (ADR-0013, ADR-0020).")
@@ -565,6 +590,14 @@ def construir_parser() -> argparse.ArgumentParser:
     p_panel.add_argument(
         "--token",
         help="Token compartido; obligatorio fuera de loopback. También $JAFNE_PANEL_TOKEN.",
+    )
+    p_panel.add_argument(
+        "--cert",
+        help="Certificado TLS. Sin él se sirve HTTP y el micrófono remoto no anda "
+        "(ADR-0038). También $JAFNE_PANEL_CERT.",
+    )
+    p_panel.add_argument(
+        "--clave", help="Clave del certificado. También $JAFNE_PANEL_CLAVE."
     )
     p_panel.set_defaults(func=_cmd_panel)
 
@@ -583,7 +616,12 @@ def _salida_en_utf8() -> None:
     for flujo in (sys.stdout, sys.stderr):
         reconfigurar = getattr(flujo, "reconfigure", None)
         if reconfigurar is not None:
-            reconfigurar(encoding="utf-8", errors="replace")
+            # `line_buffering` importa tanto como el encoding: redirigida a un archivo la
+            # salida se bufferea por bloques, y `panel`, `reloj` y `voz` imprimen su estado
+            # y después bloquean para siempre — así que ese buffer no se vacía nunca. Como
+            # servicio corren siempre redirigidos, o sea que sin esto el aviso más útil es
+            # justo el que no se lee.
+            reconfigurar(encoding="utf-8", errors="replace", line_buffering=True)
 
 
 def main(argv: list[str] | None = None) -> int:

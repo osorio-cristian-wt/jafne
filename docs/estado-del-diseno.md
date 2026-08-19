@@ -84,6 +84,8 @@ Misma relación que un Asunto tiene entre su `historial.jsonl` y su `meta.yaml`.
 | Qué es | Dashboard visual: proyectos, Asuntos, chat y uso de suscripciones | [ADR-0013](./adr/0013-panel-web-como-dashboard-visual.md) |
 | Sobre el estado | Solo lectura, **sin excepciones**: lo muestra, no lo escribe | ADR-0008 + ADR-0013 + [ADR-0035](./adr/0035-el-reloj-corre-en-su-propio-proceso.md) |
 | Hosting | Nunca en todas las interfaces; fuera de loopback exige token | [ADR-0020](./adr/0020-hosting-y-autenticacion-del-panel.md) |
+| TLS | **Opcional**, con CA propia (mkcert). Sin él se sirve HTTP y se avisa | [ADR-0038](./adr/0038-tls-del-panel-con-ca-propia.md) |
+| Para qué el TLS | Para **desbloquear el micrófono** del navegador, no por confidencialidad: la malla ya cifra | ADR-0038 + ADR-0011 |
 | Quién corre el reloj | Un **proceso propio** (`jafne reloj`), no el panel | ADR-0035 |
 | Reloj | Una cola de despertares, dos productores: cadencias y diferimientos | ADR-0035 |
 | Dónde se declaran | `~/.jafne/programado.yaml` | ADR-0035 + [ADR-0007](./adr/0007-jerarquia-de-directorios-de-jafne-implementado.md) |

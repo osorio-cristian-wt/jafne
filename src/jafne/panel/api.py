@@ -27,8 +27,9 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from .. import __version__
-from ..acceso import COOKIE_TOKEN, ConfiguracionInsegura, es_loopback, montar_token
+from ..acceso import COOKIE_TOKEN, ConfiguracionInsegura, aviso_sin_tls, es_loopback, montar_token
 from ..acceso import es_todas_las_interfaces as _es_todas_las_interfaces
+from ..acceso import resolver_tls as _resolver_tls
 from ..acceso import resolver_token as _resolver_token
 from ..acceso import validar_bind as _validar_bind
 from ..nucleo.adaptadores import AdaptadorNoConstruido, AdaptadorNoImplementado
@@ -63,6 +64,10 @@ PUERTO_POR_DEFECTO = 8730
 
 #: Variable de entorno con el token compartido del panel (ADR-0020).
 VARIABLE_TOKEN = "JAFNE_PANEL_TOKEN"
+
+#: Certificado y clave para servir HTTPS (ADR-0038). Sin ellos se sirve HTTP.
+VARIABLE_CERT = "JAFNE_PANEL_CERT"
+VARIABLE_CLAVE = "JAFNE_PANEL_CLAVE"
 
 WEB = Path(__file__).parent / "web"
 
@@ -416,16 +421,29 @@ def validar_bind(host: str, token: str | None) -> None:
     _validar_bind(host, token, servicio="El panel", variable=VARIABLE_TOKEN)
 
 
+def resolver_tls(cert: str | None = None, clave: str | None = None):
+    return _resolver_tls(cert, clave, VARIABLE_CERT, VARIABLE_CLAVE)
+
+
 def servir(
     host: str = "127.0.0.1",
     puerto: int = PUERTO_POR_DEFECTO,
     ruta_almacen: Path | None = None,
     token: str | None = None,
+    cert: str | None = None,
+    clave: str | None = None,
 ) -> None:
-    """Levanta el panel, validando el bind contra ADR-0020."""
+    """Levanta el panel, validando el bind contra ADR-0020 y el TLS de ADR-0038."""
     token = resolver_token(token)
     validar_bind(host, token)
+    tls = resolver_tls(cert, clave)
 
     import uvicorn
 
-    uvicorn.run(crear_app(ruta_almacen, token=token), host=host, port=puerto)
+    uvicorn.run(
+        crear_app(ruta_almacen, token=token),
+        host=host,
+        port=puerto,
+        ssl_certfile=str(tls[0]) if tls else None,
+        ssl_keyfile=str(tls[1]) if tls else None,
+    )

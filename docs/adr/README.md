@@ -78,7 +78,7 @@ proveedores, otro que se implementa uno— y quien los lea suelto va a elegir ma
 - [ADR-0019](./0019-validaciones-del-cierre-de-asunto.md) — Catálogo cerrado de las cinco
   validaciones del cierre.
 - [ADR-0020](./0020-hosting-y-autenticacion-del-panel.md) — Hosting y autenticación del
-  panel: interfaz ZeroTier y token.
+  panel: interfaz ZeroTier y token. *Matizada por ADR-0038.*
 - [ADR-0021](./0021-bitacora-de-cierre-en-el-repo-encargado.md) — El cierre deja un rastro
   durable en el repo `encargado/`.
 - [ADR-0022](./0022-orden-de-la-familia-openai.md) — Orden de tier de la familia OpenAI:
@@ -120,6 +120,9 @@ proveedores, otro que se implementa uno— y quien los lea suelto va a elegir ma
 - [ADR-0037](./0037-el-dictado-puede-delegarse-a-un-nodo-con-gpu.md) — El dictado se puede
   delegar a un nodo con GPU de la malla; sin declararlo sigue siendo local.
   *Matiza a ADR-0036.*
+- [ADR-0038](./0038-tls-del-panel-con-ca-propia.md) — El panel sirve TLS con una CA
+  propia, y el motivo es desbloquear el micrófono del navegador, no la confidencialidad.
+  *Matiza a ADR-0020.*
 
 ## Plantilla
 

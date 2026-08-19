@@ -1,6 +1,6 @@
 # ADR-0020 — Hosting y autenticación del panel: interfaz ZeroTier y token
 
-- **Estado**: Aceptada
+- **Estado**: Aceptada, matizada por [ADR-0038](./0038-tls-del-panel-con-ca-propia.md)
 - **Fecha**: 2026-08-11
 
 ## Contexto

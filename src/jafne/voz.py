@@ -27,6 +27,7 @@ from starlette.concurrency import run_in_threadpool
 from . import __version__
 from .acceso import ConfiguracionInsegura  # noqa: F401  (se re-exporta para la CLI)
 from .acceso import montar_token
+from .acceso import resolver_tls as _resolver_tls
 from .acceso import resolver_token as _resolver_token
 from .acceso import validar_bind as _validar_bind
 from .nucleo.transcripcion import (
@@ -40,6 +41,11 @@ from .nucleo.transcripcion import transcribir_local as voz_transcribir
 #: Puerto por defecto del nodo. Uno más que el panel, para poder correr los dos en la
 #: misma máquina mientras se prueba. No es una decisión de diseño.
 PUERTO_POR_DEFECTO = 8731
+
+#: Certificado y clave del nodo (ADR-0038). Sin ellos sirve HTTP, que por la malla ya va
+#: cifrado: acá no hay navegador, así que no hay micrófono que desbloquear.
+VARIABLE_CERT = "JAFNE_VOZ_CERT"
+VARIABLE_CLAVE = "JAFNE_VOZ_CLAVE"
 
 
 def crear_app(token: str | None = None) -> FastAPI:
@@ -108,15 +114,28 @@ def validar_bind(host: str, token: str | None) -> None:
     _validar_bind(host, token, servicio="El nodo de voz", variable=VARIABLE_TOKEN_NODO)
 
 
+def resolver_tls(cert: str | None = None, clave: str | None = None):
+    return _resolver_tls(cert, clave, VARIABLE_CERT, VARIABLE_CLAVE)
+
+
 def servir(
     host: str = "127.0.0.1",
     puerto: int = PUERTO_POR_DEFECTO,
     token: str | None = None,
+    cert: str | None = None,
+    clave: str | None = None,
 ) -> None:
     """Levanta el nodo, validando el bind contra ADR-0020 antes de abrir el socket."""
     token = resolver_token(token)
     validar_bind(host, token)
+    tls = resolver_tls(cert, clave)
 
     import uvicorn
 
-    uvicorn.run(crear_app(token=token), host=host, port=puerto)
+    uvicorn.run(
+        crear_app(token=token),
+        host=host,
+        port=puerto,
+        ssl_certfile=str(tls[0]) if tls else None,
+        ssl_keyfile=str(tls[1]) if tls else None,
+    )

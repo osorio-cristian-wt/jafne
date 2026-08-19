@@ -16,6 +16,7 @@ from __future__ import annotations
 import ipaddress
 import os
 import secrets
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -64,6 +65,54 @@ def validar_bind(host: str, token: str | None, *, servicio: str, variable: str) 
             f"Escuchar en '{host}' exige el token compartido de ADR-0020. Definí "
             f"${variable} o pasá --token."
         )
+
+
+def resolver_tls(
+    cert: str | None, clave: str | None, variable_cert: str, variable_clave: str
+) -> tuple[Path, Path] | None:
+    """Las rutas del certificado y su clave, o `None` si no se declaró TLS (ADR-0038).
+
+    Se exigen las dos o ninguna, y se comprueba que existan **antes** de escuchar: un
+    certificado mal apuntado que se descubre al primer navegador es un servicio que
+    arrancó diciendo que estaba listo y no lo estaba.
+    """
+    cert = cert or os.environ.get(variable_cert) or None
+    clave = clave or os.environ.get(variable_clave) or None
+
+    if not cert and not clave:
+        return None
+    if not cert or not clave:
+        falta = variable_cert if not cert else variable_clave
+        raise ConfiguracionInsegura(
+            f"TLS necesita el certificado y su clave, y falta uno de los dos (${falta}). "
+            f"Se declaran juntos o no se declara ninguno (ADR-0038)."
+        )
+
+    rutas = (Path(cert).expanduser(), Path(clave).expanduser())
+    for ruta in rutas:
+        if not ruta.is_file():
+            raise ConfiguracionInsegura(
+                f"No existe '{ruta}'. El certificado se genera con mkcert (ADR-0038); "
+                f"mirá la sección Operación del README."
+            )
+    return rutas
+
+
+def aviso_sin_tls(host: str) -> str | None:
+    """Qué se pierde por servir HTTP fuera de loopback (ADR-0038).
+
+    No es un error: por la malla el tráfico ya va cifrado (ADR-0011), así que mirar el
+    dashboard sin TLS es legítimo. Lo que no va a andar es el micrófono, y es mejor leerlo
+    en la consola al arrancar que descubrirlo con un botón gris.
+    """
+    if es_loopback(host):
+        return None
+    return (
+        "Sin TLS: se sirve por HTTP. El tráfico igual va cifrado por la malla (ADR-0011), "
+        "pero el navegador NO va a dar acceso al micrófono desde otra máquina — solo "
+        "entrega el micrófono a un contexto seguro. Para dictar en remoto hace falta "
+        "--cert/--clave (ADR-0038)."
+    )
 
 
 def montar_token(app: FastAPI, *, detalle: str) -> None:

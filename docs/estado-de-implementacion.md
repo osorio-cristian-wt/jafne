@@ -23,6 +23,7 @@ fuentes:
   - docs/adr/0035-el-reloj-corre-en-su-propio-proceso.md
   - docs/adr/0036-dictado-por-voz-con-whisper-local.md
   - docs/adr/0037-el-dictado-puede-delegarse-a-un-nodo-con-gpu.md
+  - docs/adr/0038-tls-del-panel-con-ca-propia.md
   - src/jafne/pendientes.py
 verificado: 2026-08-19
 ---
@@ -127,7 +128,11 @@ Fuera de loopback el panel exige token (ADR-0020):
 JAFNE_PANEL_TOKEN=… jafne panel --host <IP-ZeroTier>
 ```
 
-Tests: `.venv/Scripts/python -m pytest` (240 casos, verde al 2026-08-19).
+Cómo dejar los tres procesos corriendo solos en Windows —tareas programadas, reglas de
+firewall y el acceso al panel desde la malla ZeroTier— está en la sección **Operación** del
+[README](../README.md#operación).
+
+Tests: `.venv/Scripts/python -m pytest` (258 casos, verde al 2026-08-19).
 
 ## Estructura
 
@@ -151,7 +156,7 @@ src/jafne/
   panel/
     api.py             FastAPI: JSON, estáticos y token (ADR-0013, ADR-0020)
     web/               index.html + estilo.css + app.js, sin build (ADR-0015)
-  acceso.py            bind y token, compartidos por panel y nodo (ADR-0020)
+  acceso.py            bind, token y TLS, compartidos por panel y nodo (ADR-0020, ADR-0038)
   voz.py               el nodo que presta una GPU a la malla (ADR-0037)
   reloj.py             el proceso del reloj: candado, espera y disparo (ADR-0035)
   cli.py               jafne <comando>
@@ -198,6 +203,8 @@ tests/                 estados, catálogos, señal de saldo, almacén, cierre, r
 | Voz: el nodo | `jafne voz` levanta dos endpoints y nada más: no lee `~/.jafne/` y no puede escribir estado. Un nodo con `$JAFNE_VOZ_NODO` puesto transcribe igual, no se reenvía a sí mismo. | ADR-0037 |
 | Voz: nodo caído | `NodoInalcanzable` → 501 con el motivo. **No** cae a la CPU local: la diferencia de latencia tiene que verse. | ADR-0037 |
 | Voz: GPU o CPU | `auto` elige CUDA si CTranslate2 la ve, con `float16`; en CPU, `int8`. Declarar `cuda` y que no haya se rechaza. | ADR-0037 |
+| TLS del panel y del nodo | `--cert`/`--clave` (o sus variables) hacen que uvicorn sirva HTTPS. Se exigen los dos o ninguno, y se comprueba que los archivos existan **antes** de escuchar. | [ADR-0038](./adr/0038-tls-del-panel-con-ca-propia.md) |
+| Aviso al servir sin TLS | Fuera de loopback avisa que el navegador no va a dar micrófono, aclarando que el tráfico igual va cifrado por la malla. No se rechaza: mirar el dashboard sin TLS es legítimo. | ADR-0038 + ADR-0011 |
 | Bind y token compartidos | La comprobación de ADR-0020 es una sola función para el panel y para el nodo: dos servicios con reglas de acceso copiadas terminan con reglas distintas. | ADR-0020 + ADR-0037 |
 | CLI | `init`, `proyectos`, `asuntos`, `abrir`, `estado`, `contenedor`, `pregunta`, `anotar`, `historial`, `reabrir`, `cerrar`, `saldo`, `cerebros`, `credencial`, `pendientes`, `panel`, `reloj`, `voz`. Fuerza UTF-8 en la salida: la consola de Windows es cp1252 y `jafne pendientes` moría con el `→` del hop 4. | ADR-0007/0009/0013/0016-0021/0025-0035 |
 
@@ -216,7 +223,7 @@ registró y dice, al lado, que medirlo solo todavía no está decidido.
 | `workspace-broker` | **Descubrimiento de servicios del proyecto** — base de datos, colas, otros repos— con la red restringida de ADR-0011. Crear Workspaces ya no está bloqueado por una decisión: ADR-0027 fijó quién declara el aislamiento y ADR-0032 a qué runtime mapea. | [ADR-0011](./adr/0011-redes-y-puertos-de-workspace.md) |
 | `sprints` | El modelo está decidido (ejes independientes, estado afuera); falta **cuál** herramienta y qué vocabulario mínimo sirve para hablarle a cualquiera. Sin eso no hay contrato MCP que programar. | [ADR-0023](./adr/0023-sprints-ejes-independientes-y-estado-externo.md) + [ADR-0014](./adr/0014-gestion-de-sprints-via-mcp.md) |
 | `protocolo-asignacion-tareas` | El mensaje Encargado → Agente (hop 4). No bloquea al panel: se puede decidir aparte. | [protocolo-de-asignacion-de-tareas](../investigacion/protocolo-de-asignacion-de-tareas/research.md) |
-| `tls-y-rotacion-de-token` | TLS propio del panel, cada cuánto rota el token y qué hacer si se filtra. | ADR-0020 |
+| `rotacion-de-token` | Cada cuánto rota el token, quién lo rota y qué hacer si se filtra. Ahora son **dos** tokens, uno por servicio. El TLS ya se decidió (ADR-0038). | ADR-0020 + ADR-0038 |
 | `sincronia-entre-maquinas` | Qué pasa si el Usuario opera JAFNE desde dos máquinas con estado operativo distinto. | ADR-0021 |
 
 ## Decidido, y todavía no implementado
