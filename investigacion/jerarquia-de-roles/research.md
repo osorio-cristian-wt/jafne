@@ -47,10 +47,23 @@ propio JAFNE hace *dogfooding* de esta separación.
 
 Detalle del mapeo en [`analisis/mapeo-documentacion-por-nivel.md`](./analisis/mapeo-documentacion-por-nivel.md).
 
+## Ya decidido (graduó directo a ADR)
+
+La cadena de escalación (Agente → Encargado → Asistente → Usuario), los dos modos de
+comunicación (directo/delegado) y la palabra clave "Jafne" eran requisitos directos del
+usuario, no alternativas para investigar — graduaron directo a
+[ADR-0002](../../docs/adr/0002-jerarquia-de-roles-escalacion-y-modos-de-comunicacion.md)
+sin pasar por este research.md (ver [ADR-0005](../../docs/adr/0005-cuando-investigar-vs-adr-directo.md)).
+
 ## Preguntas abiertas
 
 - Nombre y límites exactos del **Asistente** (¿es OpenClaw o lo envuelve?).
 - ¿Quién decide el estándar de un repo (arc42 vs ADR) y cómo lo descubre el Agente?
-- ¿Cómo se comunican Encargado ↔ Agentes (asignación de tareas, reporte de avance)?
+- Protocolo concreto de asignación de tareas Encargado → Agente (qué contexto se pasa,
+  formato) — la cadena de escalación en sí ya está definida en ADR-0002.
 - Relación con el *Engineering Coordinator* de v0.2: ¿el Encargado **es** el Coordinator?
 - ¿Cómo "gradúa" un hallazgo del Encargado (Casa Justina) a un ADR dentro de un repo?
+- ~~Memoria de estado/sesión del Encargado~~ — resuelta: el cierre de un Asunto documenta
+  lo hablado ([ADR-0006](../../docs/adr/0006-asuntos-unidad-de-trabajo-y-ciclo-de-vida.md))
+  y vive en `~/.jafne/asuntos/`
+  ([ADR-0007](../../docs/adr/0007-jerarquia-de-directorios-de-jafne-implementado.md)).
