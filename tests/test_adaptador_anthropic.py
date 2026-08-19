@@ -222,13 +222,32 @@ def test_sin_rol_no_se_inyecta_ningun_prompt(cli_falsa):
     assert "--append-system-prompt-file" not in cli_falsa[0]["comando"]
 
 
-def test_un_rol_sin_prompt_escrito_no_falla(cli_falsa):
-    # Solo el Asistente tiene texto hoy (ADR-0040). Un rol sin el suyo conversa sin
-    # identidad de rol, que es lo que pasaba antes — no revienta el turno.
+def test_el_agente_tiene_identidad_pero_no_servidor_mcp(cli_falsa):
+    """Prompt e identidad de rol son cosas separadas (ADR-0040 vs ADR-0044).
+
+    El Agente ya tiene prompt —se pudo escribir cuando ADR-0047 y ADR-0048 contestaron qué
+    es un repo para JAFNE—, pero **no** tiene MCP: su alcance es un repositorio y el
+    servidor no expone ese recorte. Que tenga uno no implica lo otro.
+    """
     adaptador = _adaptador(rol=Rol.AGENTE)
     adaptador.abrir("/x", Tamano.MEDIO)
     list(adaptador.emitir("hola"))
-    assert "--append-system-prompt-file" not in cli_falsa[0]["comando"]
+    comando = cli_falsa[0]["comando"]
+    assert "--append-system-prompt-file" in comando
+    assert "agente.md" in comando[comando.index("--append-system-prompt-file") + 1]
+    assert "--mcp-config" not in comando
+
+
+def test_el_encargado_tiene_identidad_de_organizacion(cli_falsa):
+    """Su alcance es la organización, no un repositorio (ADR-0044).
+
+    Es la distinción que sostiene la delegación: si el Encargado se cree dueño de la
+    implementación de un repo, hace el trabajo del Agente y no delega nada.
+    """
+    texto = " ".join(prompts.ruta_prompt(Rol.ENCARGADO).read_text(encoding="utf-8").split())
+    assert "una organización" in texto
+    assert "varios Agentes, uno por repo" in texto
+    assert "escalá al Asistente" in texto
 
 
 def test_el_prompt_del_asistente_dice_las_tres_cosas_que_tiene_que_decir():
@@ -244,6 +263,91 @@ def test_el_prompt_del_asistente_dice_las_tres_cosas_que_tiene_que_decir():
     assert "Usuario → Asistente (vos) → Encargado → Agentes" in texto
     assert "raíz de repos" in texto
     assert "No tomás decisiones de diseño" in texto
+
+
+# ── el MCP, acotado por rol (ADR-0042, ADR-0044) ─────────────────────────────
+
+
+def _config_mcp(comando: list[str]) -> dict:
+    return json.loads(comando[comando.index("--mcp-config") + 1])
+
+
+def test_al_asistente_se_le_declara_el_mcp_de_todos_los_proyectos(cli_falsa):
+    adaptador = _adaptador(rol=Rol.ASISTENTE)
+    adaptador.abrir("/x", Tamano.MEDIO)
+    list(adaptador.emitir("hola"))
+
+    servidor = _config_mcp(cli_falsa[0]["comando"])["mcpServers"]["jafne"]
+    assert servidor["type"] == "http"
+    assert servidor["url"].endswith("/mcp/asistente")
+
+
+def test_al_encargado_se_le_declara_el_mcp_de_su_proyecto(cli_falsa):
+    """La URL la arma JAFNE, no el agente (ADR-0042).
+
+    Es lo que sostiene el acotamiento: si el rol viajara en el mensaje, un Encargado podría
+    declararse Asistente y ver todos los proyectos.
+    """
+    adaptador = _adaptador(rol=Rol.ENCARGADO, proyecto="borr")
+    adaptador.abrir("/x", Tamano.GRANDE)
+    list(adaptador.emitir("hola"))
+
+    servidor = _config_mcp(cli_falsa[0]["comando"])["mcpServers"]["jafne"]
+    assert servidor["url"].endswith("/mcp/proyecto/borr")
+
+
+def test_un_encargado_sin_proyecto_no_recibe_mcp(cli_falsa):
+    # Sin proyecto no hay alcance que declarar, y darle el del Asistente le abriría todos
+    # los proyectos — exactamente lo que la jerarquía separa.
+    adaptador = _adaptador(rol=Rol.ENCARGADO)
+    adaptador.abrir("/x", Tamano.GRANDE)
+    list(adaptador.emitir("hola"))
+    assert "--mcp-config" not in cli_falsa[0]["comando"]
+
+
+def test_el_agente_todavia_no_tiene_mcp(cli_falsa):
+    # Su alcance es un repositorio (ADR-0044) y el servidor no expone ese recorte. Darle el
+    # del Encargado le daría la vista del proyecto entero.
+    adaptador = _adaptador(rol=Rol.AGENTE, proyecto="borr")
+    adaptador.abrir("/x", Tamano.MEDIO)
+    list(adaptador.emitir("hola"))
+    assert "--mcp-config" not in cli_falsa[0]["comando"]
+
+
+def test_las_herramientas_del_mcp_se_permiten_explicitamente(cli_falsa):
+    """Sin esto el agente las **ve** y no las puede usar.
+
+    Verificado contra la CLI real el 2026-08-19: con `acceptEdits` solo, la llamada queda
+    esperando una aprobación que desde el panel no hay quién dar — el mismo problema que
+    ADR-0039 encontró para las herramientas de archivos.
+    """
+    adaptador = _adaptador(rol=Rol.ASISTENTE)
+    adaptador.abrir("/x", Tamano.MEDIO)
+    list(adaptador.emitir("hola"))
+
+    comando = cli_falsa[0]["comando"]
+    assert comando[comando.index("--allowed-tools") + 1] == "mcp__jafne"
+
+
+def test_el_token_de_infraestructura_va_en_la_cabecera_y_no_en_la_url(monkeypatch, cli_falsa):
+    # La línea de comandos la ve cualquiera con un listado de procesos.
+    from jafne.nucleo import mcp
+
+    monkeypatch.setenv(mcp.VARIABLE_TOKEN, "un-secreto")
+    adaptador = _adaptador(rol=Rol.ASISTENTE)
+    adaptador.abrir("/x", Tamano.MEDIO)
+    list(adaptador.emitir("hola"))
+
+    servidor = _config_mcp(cli_falsa[0]["comando"])["mcpServers"]["jafne"]
+    assert servidor["headers"]["Authorization"] == "Bearer un-secreto"
+    assert "un-secreto" not in servidor["url"]
+
+
+def test_sin_rol_no_se_declara_ningun_mcp(cli_falsa):
+    adaptador = _adaptador()
+    adaptador.abrir("/x", Tamano.MEDIO)
+    list(adaptador.emitir("hola"))
+    assert "--mcp-config" not in cli_falsa[0]["comando"]
 
 
 def test_nunca_se_pasa_una_credencial(cli_falsa):

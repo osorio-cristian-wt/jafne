@@ -1,6 +1,7 @@
 # ADR-0032 — La clase `generado` corre en microVM, como runtime OCI del mismo Podman
 
-- **Estado**: Aceptada
+- **Estado**: Reemplazada por [ADR-0041](./0041-el-driver-de-generado-es-krun.md), y con
+  ella por [ADR-0045](./0045-para-que-existen-los-contenedores.md)
 - **Fecha**: 2026-08-18
 - **Matiza a**: [ADR-0012](./0012-motor-de-contenedores-podman.md)
 

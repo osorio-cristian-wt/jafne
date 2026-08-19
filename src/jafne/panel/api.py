@@ -20,7 +20,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -51,6 +51,7 @@ from ..nucleo import (
     TRANSICIONES_CONTENEDOR,
     Almacen,
     AsuntoDesconocido,
+    ChatDesconocido,
     EstadoAsunto,
     EstadoContenedor,
     IdInvalido,
@@ -79,6 +80,9 @@ class MensajeEntrada(BaseModel):
     """Un mensaje del Usuario hacia el Asistente o un Encargado (ADR-0002)."""
 
     mensaje: str = Field(min_length=1)
+    #: En qué chat guardado va este turno (ADR-0043). Sin esto se abre uno nuevo, que es el
+    #: default que el Usuario pidió: *nuevo por defecto, pero con histórico*.
+    chat: str | None = None
 
 
 def crear_app(ruta_almacen: Path | None = None, token: str | None = None) -> FastAPI:
@@ -129,6 +133,7 @@ def crear_app(ruta_almacen: Path | None = None, token: str | None = None) -> Fas
         )
 
     @app.exception_handler(ProyectoDesconocido)
+    @app.exception_handler(ChatDesconocido)
     @app.exception_handler(AsuntoDesconocido)
     async def _no_encontrado(request: Request, exc: Exception) -> JSONResponse:
         return JSONResponse(
@@ -258,6 +263,35 @@ def crear_app(ruta_almacen: Path | None = None, token: str | None = None) -> Fas
         datos = alm.asunto(proyecto_id, asunto_id)
         return {**datos.a_dict(), "cierre": alm.cierre(proyecto_id, asunto_id)}
 
+    @app.get("/api/asuntos/{proyecto_id}/{asunto_id}/registro")
+    def registro_del_asunto(
+        request: Request, proyecto_id: str, asunto_id: str, repo: str
+    ) -> dict[str, Any]:
+        """El registro del contenedor de **un repo** de ese Asunto (ADR-0047).
+
+        Lleva `repo` obligatorio porque desde ADR-0047 un Asunto no tiene *un* contenedor
+        sino uno por Agente delegado. Sin ese parámetro no hay pregunta bien formada.
+
+        El panel no corre `podman logs`: ADR-0012 dice que nadie habla con el motor salvo
+        Infraestructura. Acá se pregunta y se muestra. Si está apagada se dice **eso**, en
+        vez de devolver un registro vacío que se leería como "no escribió nada".
+        """
+        from ..infraestructura import InfraestructuraInalcanzable, registro_remoto
+        from ..nucleo.workspaces import nombre_de
+
+        alm = almacen(request)
+        alm.asunto(proyecto_id, asunto_id)  # 404 si no existe
+        nombre = nombre_de(proyecto_id, asunto_id, repo)
+        try:
+            return registro_remoto(nombre)
+        except InfraestructuraInalcanzable as error:
+            return {
+                "nombre": nombre,
+                "existe": False,
+                "registro": "",
+                "detalle": str(error),
+            }
+
     @app.get("/api/asuntos/{proyecto_id}/{asunto_id}/historial")
     def historial(
         request: Request, proyecto_id: str, asunto_id: str
@@ -266,6 +300,76 @@ def crear_app(ruta_almacen: Path | None = None, token: str | None = None) -> Fas
         alm = almacen(request)
         alm.asunto(proyecto_id, asunto_id)  # 404 si no existe
         return [m.a_dict() for m in alm.historial(proyecto_id, asunto_id)]
+
+    @app.get("/api/repos/{repo}/capacidades")
+    def capacidades_del_repo(request: Request, repo: str) -> dict[str, Any]:
+        """Las skills y servidores MCP que declara ese repo (ADR-0004).
+
+        El repo se busca **dentro de la raíz de trabajo** y nunca fuera: es el mismo borde
+        de ADR-0039 que acota al agente, y sin él este endpoint leería cualquier carpeta
+        del disco por nombre. Se normaliza y se comprueba que caiga adentro, en vez de
+        confiar en que el nombre no traiga `..`.
+        """
+        from ..nucleo import capacidades
+
+        raiz = Path(raiz_de_trabajo()).resolve()
+        destino = (raiz / repo).resolve()
+        if destino != raiz and raiz not in destino.parents:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"'{repo}' no está dentro de la raíz de trabajo ({raiz}). El borde de "
+                    f"ADR-0039 vale también para leer capacidades."
+                ),
+            )
+        return capacidades.leer(destino).a_dict()
+
+    @app.get("/api/roles/{rol_id}/identidad")
+    def identidad_del_rol(
+        request: Request, rol_id: str, proyecto: str | None = None
+    ) -> dict[str, Any]:
+        """Con qué identidad y qué herramientas arranca ese rol.
+
+        Es lo que hasta ahora había que deducir leyendo el código: qué texto se le agrega
+        al system prompt (ADR-0040), a qué punto de entrada MCP lo apunta JAFNE, y qué
+        herramientas ve ahí — preguntadas en vivo, con el acotamiento por URL ya aplicado
+        (ADR-0042). Un rol sin prompt o sin MCP no es un error: se dice y ya.
+        """
+        from ..infraestructura import InfraestructuraInalcanzable, herramientas_remotas
+        from ..nucleo import mcp as mcp_cliente
+        from ..nucleo import prompts
+
+        try:
+            rol = Rol(rol_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=404,
+                detail=f"'{rol_id}' no es un rol. Los que hay: {', '.join(r.value for r in Rol)}.",
+            ) from None
+
+        ruta = prompts.ruta_prompt(rol)
+        salida: dict[str, Any] = {
+            "rol": rol.value,
+            "descripcion": DESCRIPCIONES_ROL[rol],
+            "prompt_archivo": ruta.name if ruta else None,
+            "prompt": ruta.read_text(encoding="utf-8") if ruta else None,
+            "mcp_url": mcp_cliente.url_para(rol, proyecto),
+            "proyecto": proyecto,
+        }
+        if not salida["mcp_url"]:
+            salida["herramientas"] = []
+            salida["detalle"] = (
+                f"Al rol '{rol.value}' no le toca servidor MCP todavía: su alcance es un "
+                f"repositorio (ADR-0044) y el servidor no expone ese recorte."
+            )
+            return salida
+        try:
+            salida["herramientas"] = herramientas_remotas(rol, proyecto)
+            salida["detalle"] = None
+        except InfraestructuraInalcanzable as error:
+            salida["herramientas"] = []
+            salida["detalle"] = str(error)
+        return salida
 
     @app.get("/api/cerebros")
     def cerebros(request: Request) -> list[dict[str, Any]]:
@@ -373,61 +477,151 @@ def crear_app(ruta_almacen: Path | None = None, token: str | None = None) -> Fas
         # mientras tanto, sin poder ni servir la grilla de proyectos.
         return (await run_in_threadpool(voz_transcribir, audio, idioma)).a_dict()
 
-    # ── el chat (ADR-0013, ADR-0031, ADR-0034) ───────────────────────────────
+    # ── el chat (ADR-0013, ADR-0031, ADR-0034, ADR-0043) ─────────────────────
     #
-    # Las sesiones viven en la **memoria del proceso**, no en `~/.jafne/`, y no es una
-    # simplificación: el panel no escribe estado (ADR-0008/ADR-0013), propiedad que
-    # ADR-0035 le devolvió entera al sacarle el reloj. Guardar acá el id de sesión lo
-    # volvería escritor otra vez por la puerta de atrás.
+    # El adaptador vivo sigue en **memoria del proceso**: es un subproceso corriendo, y eso
+    # no se serializa. Lo que sí se guarda ahora, en `~/.jafne/chats/`, es la conversación
+    # del **Asistente**: su id de sesión y su transcript (ADR-0043).
     #
-    # Lo que se paga: al reiniciar el panel la conversación arranca de cero. La sesión
-    # sigue viva del lado del proveedor —es reanudable por id (ADR-0031)—, lo que se
-    # pierde es el id. Persistirlo es de quien sí puede escribir: el Encargado, en el
-    # `meta.yaml` de su Asunto, cuando exista ese camino.
+    # Eso mueve una propiedad que ADR-0035 acababa de devolverle entera al panel, y conviene
+    # decirlo sin adornos en vez de que se descubra leyendo el código: el panel **sí**
+    # escribe, y lo que sigue sin escribir es **estado de Asuntos**. Un chat no es un
+    # Asunto — no tiene estado, ni contenedor, ni cierre—, así que el eje que ADR-0008 y
+    # ADR-0013 protegen queda intacto.
+    #
+    # Los chats de Encargado **no** se guardan: cuando haya que persistirlos serán Asuntos,
+    # que es lo que ADR-0006 ya dice que son.
 
-    def _sesion_de(request: Request, clave: str, rol: Rol) -> Any:
+    def _sesion_de(
+        request: Request,
+        clave: str,
+        rol: Rol,
+        reanudar: str | None = None,
+        proyecto: str | None = None,
+    ) -> Any:
         """El adaptador de esa conversación, abriéndolo la primera vez."""
         sesiones = request.app.state.sesiones
         if clave not in sesiones:
             cerebro = almacen(request).cerebro_de(rol)
             if cerebro is None:
-                # ADR-0033 no le dio tamaño por defecto al Encargado —lo elige por tarea—
-                # y una conversación todavía no es una tarea. Se declara en vez de
-                # inventar un default, que es la regla de ADR-0015.
-                raise DecisionPendiente("cerebro-del-encargado-conversando")
+                raise SinCerebroParaElRol(
+                    f"No hay cerebro usable para el rol '{rol.value}'. Declaralo en "
+                    f"`cerebros.yaml` con el tamaño que le toca (ADR-0033, ADR-0044)."
+                )
+            # El proyecto acota el MCP del Encargado (ADR-0042): lo pone el panel, que sabe
+            # de qué proyecto es la conversación, y no el agente.
             adaptador = construir_adaptador(
-                cerebro.proveedor, modelo=cerebro.modelo, rol=rol
+                cerebro.proveedor, modelo=cerebro.modelo, rol=rol, proyecto=proyecto
             )
-            # La conversación arranca parada en la raíz de trabajo (ADR-0039): es donde
-            # están los repos, y es el borde de lo que el agente puede tocar.
-            adaptador.abrir(raiz_de_trabajo(), cerebro.tamano)
+            if reanudar:
+                # Reanudar y no reinyectar: el historial lo tiene el proveedor (ADR-0031).
+                adaptador.reanudar(reanudar)
+            else:
+                # La conversación arranca parada en la raíz de trabajo (ADR-0039): es donde
+                # están los repos, y es el borde de lo que el agente puede tocar.
+                adaptador.abrir(raiz_de_trabajo(), cerebro.tamano)
             sesiones[clave] = adaptador
         return sesiones[clave]
 
-    async def _chat(request: Request, clave: str, rol: Rol, mensaje: str) -> dict[str, Any]:
-        adaptador = _sesion_de(request, clave, rol)
+    async def _chat(
+        request: Request,
+        clave: str,
+        rol: Rol,
+        mensaje: str,
+        chat_id: str | None = None,
+        reanudar: str | None = None,
+        proyecto: str | None = None,
+    ) -> dict[str, Any]:
+        adaptador = _sesion_de(request, clave, rol, reanudar=reanudar, proyecto=proyecto)
+        alm = almacen(request)
+        if chat_id:
+            alm.anotar_chat(chat_id, "usuario", mensaje)
         # Fuera del bucle de eventos: un turno es un subproceso que puede tardar un minuto,
         # y en el hilo del bucle dejaría al panel entero congelado mientras piensa.
         eventos = await run_in_threadpool(lambda: list(adaptador.emitir(mensaje)))
+        texto = "".join(e.texto for e in eventos if e.tipo is TipoEvento.TEXTO)
+        id_sesion = getattr(adaptador, "id_sesion", None)
+        if chat_id:
+            if texto:
+                alm.anotar_chat(chat_id, "asistente", texto)
+            alm.registrar_sesion_chat(chat_id, id_sesion)
+            # El título sale del primer mensaje del Usuario: recién ahí se sabe de qué es la
+            # conversación, y pedírselo antes de empezar es fricción por nada.
+            if not alm.chat(chat_id).titulo:
+                alm.titular_chat(chat_id, mensaje.strip().splitlines()[0][:80])
         return {
             "eventos": [e.a_dict() for e in eventos],
-            "texto": "".join(e.texto for e in eventos if e.tipo is TipoEvento.TEXTO),
-            "id_sesion": getattr(adaptador, "id_sesion", None),
+            "texto": texto,
+            "id_sesion": id_sesion,
+            "chat": chat_id,
         }
+
+    # ── chats guardados (ADR-0043) ───────────────────────────────────────────
+
+    @app.get("/api/chats")
+    def chats(request: Request) -> list[dict[str, Any]]:
+        """El histórico, del más reciente al más viejo. No caduca."""
+        return [c.a_dict() for c in almacen(request).chats()]
+
+    @app.post("/api/chats")
+    def abrir_chat(request: Request) -> dict[str, Any]:
+        """Un chat nuevo. Es lo que hace el panel al cargar: *nuevo por defecto*."""
+        return almacen(request).abrir_chat().a_dict()
+
+    @app.get("/api/chats/{chat_id}")
+    def ver_chat(request: Request, chat_id: str) -> dict[str, Any]:
+        alm = almacen(request)
+        chat = alm.chat(chat_id)
+        return {
+            **chat.a_dict(),
+            "mensajes": [m.a_dict() for m in alm.historial_chat(chat_id)],
+        }
+
+    @app.delete("/api/chats/{chat_id}")
+    def borrar_chat(request: Request, chat_id: str) -> dict[str, Any]:
+        """La única forma de que un chat desaparezca: que el Usuario lo saque."""
+        alm = almacen(request)
+        existia = alm.borrar_chat(chat_id)
+        # Si estaba abierto en este proceso, su adaptador ya no tiene chat que respaldarlo.
+        request.app.state.sesiones.pop(f"chat:{chat_id}", None)
+        return {"borrado": existia, "id": chat_id}
 
     @app.post("/api/chat/asistente")
     async def chat_asistente(request: Request, entrada: MensajeEntrada) -> dict[str, Any]:
-        """Chat con el Asistente desde la raíz del panel (ADR-0013, ADR-0031)."""
-        return await _chat(request, "asistente", Rol.ASISTENTE, entrada.mensaje)
+        """Chat con el Asistente, guardado en `~/.jafne/chats/` (ADR-0043).
+
+        Sin `chat` se abre uno nuevo, que es el default que el Usuario pidió. Con `chat` se
+        retoma ese: el adaptador reanuda la sesión del proveedor por id (ADR-0031), así que
+        el contexto vuelve sin reinyectar nada.
+        """
+        alm = almacen(request)
+        chat_id = entrada.chat or alm.abrir_chat().id
+        chat = alm.chat(chat_id)
+        return await _chat(
+            request,
+            f"chat:{chat_id}",
+            Rol.ASISTENTE,
+            entrada.mensaje,
+            chat_id=chat_id,
+            reanudar=chat.id_sesion,
+        )
 
     @app.post("/api/proyectos/{proyecto_id}/chat")
     async def chat_encargado(
         request: Request, proyecto_id: str, entrada: MensajeEntrada
     ) -> dict[str, Any]:
-        """Chat con el Encargado del proyecto — el modo directo de ADR-0002."""
+        """Chat con el Encargado del proyecto — el modo directo de ADR-0002.
+
+        **No se guarda** (ADR-0043): el trabajo con un Encargado es un Asunto, y duplicarlo
+        como chat dejaría dos lugares donde vive lo mismo.
+        """
         almacen(request).proyecto(proyecto_id)  # 404 antes que nada si no existe
         return await _chat(
-            request, f"proyecto:{proyecto_id}", Rol.ENCARGADO, entrada.mensaje
+            request,
+            f"proyecto:{proyecto_id}",
+            Rol.ENCARGADO,
+            entrada.mensaje,
+            proyecto=proyecto_id,
         )
 
     if WEB.is_dir():

@@ -39,7 +39,7 @@ from .estados import (
     validar_transicion_contenedor,
 )
 from .adaptadores import hay_adaptador
-from .modelos import Asunto, Cerebro, Mensaje, Proyecto, Suscripcion, Ventana, a_utc
+from .modelos import Asunto, Cerebro, Chat, Mensaje, Proyecto, Suscripcion, Ventana, a_utc
 from .roles import Rol, tamano_por_defecto
 from .tamanos import parsear as parsear_tamano
 
@@ -166,6 +166,10 @@ class ProyectoDesconocido(KeyError):
 
 class AsuntoDesconocido(KeyError):
     """No hay un Asunto con ese id en ese proyecto."""
+
+
+class ChatDesconocido(KeyError):
+    """No hay un chat guardado con ese id (ADR-0043)."""
 
 
 class IdInvalido(ValueError):
@@ -579,6 +583,156 @@ class Almacen:
         with archivo.open("a", encoding="utf-8") as salida:
             salida.write(json.dumps(mensaje.a_dict(), ensure_ascii=False) + "\n")
         return mensaje
+
+    # ── chats del Asistente (ADR-0043) ───────────────────────────────────────
+    #
+    # Misma forma que un Asunto —`meta.yaml` chico y actual, `historial.jsonl` append-only—
+    # porque es la forma que este repo ya eligió para lo mismo, y dos formas distintas para
+    # el mismo problema se desincronizan.
+    #
+    # Se guardan **las dos cosas**: el id de sesión del proveedor (para reanudar sin
+    # reinyectar, ADR-0031) y el transcript propio (para que el histórico siga legible
+    # aunque el proveedor pierda la sesión, ADR-0003). Cuando discrepan gana el transcript
+    # para *mostrar* y el id para *reanudar*: cada uno es la fuente de lo suyo.
+
+    @property
+    def ruta_chats(self) -> Path:
+        return self.ruta / "chats"
+
+    def ruta_chat(self, chat_id: str) -> Path:
+        _validar_id(chat_id, "chat")
+        return self.ruta_chats / chat_id
+
+    def ruta_historial_chat(self, chat_id: str) -> Path:
+        return self.ruta_chat(chat_id) / "historial.jsonl"
+
+    def chats(self) -> list[Chat]:
+        """Los chats guardados, del más reciente al más viejo.
+
+        No caducan y no se borran solos (ADR-0043): los saca el Usuario cuando quiere.
+        """
+        if not self.ruta_chats.is_dir():
+            return []
+        encontrados = []
+        for carpeta in self.ruta_chats.iterdir():
+            if not carpeta.is_dir():
+                continue
+            chat = self._leer_chat(carpeta)
+            if chat is not None:
+                encontrados.append(chat)
+        return sorted(
+            encontrados,
+            key=lambda c: c.ultima_actividad or c.creado or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
+        )
+
+    def _leer_chat(self, carpeta: Path) -> Chat | None:
+        meta = _leer_yaml(carpeta / "meta.yaml")
+        if not meta:
+            return None
+        historial = carpeta / "historial.jsonl"
+        cuantos = 0
+        if historial.is_file():
+            cuantos = sum(1 for l in historial.read_text(encoding="utf-8").splitlines() if l.strip())
+        return Chat(
+            id=carpeta.name,
+            titulo=meta.get("titulo"),
+            id_sesion=meta.get("id_sesion"),
+            creado=a_utc(meta.get("creado")),
+            ultima_actividad=a_utc(meta.get("ultima_actividad")),
+            mensajes=cuantos,
+        )
+
+    def chat(self, chat_id: str) -> Chat:
+        carpeta = self.ruta_chat(chat_id)
+        leido = self._leer_chat(carpeta) if carpeta.is_dir() else None
+        if leido is None:
+            raise ChatDesconocido(f"No existe el chat '{chat_id}' en {self.ruta_chats}.")
+        return leido
+
+    def historial_chat(self, chat_id: str) -> list[Mensaje]:
+        archivo = self.ruta_historial_chat(chat_id)
+        if not archivo.is_file():
+            return []
+        mensajes = []
+        for linea in archivo.read_text(encoding="utf-8").splitlines():
+            if not linea.strip():
+                continue
+            try:
+                mensajes.append(Mensaje.desde_dict(json.loads(linea)))
+            except json.JSONDecodeError:
+                continue  # una línea corrupta no invalida el resto
+        return mensajes
+
+    def abrir_chat(self, titulo: str | None = None, chat_id: str | None = None) -> Chat:
+        """Un chat nuevo. Es el default del panel: *nuevo por defecto, con histórico*.
+
+        El id sale de la fecha y la hora, así que ordena solo y se lee de un vistazo. No es
+        un slug del título porque el título recién se sabe después del primer turno.
+        """
+        ahora = datetime.now(timezone.utc)
+        nuevo = chat_id or ahora.strftime("%Y%m%d-%H%M%S")
+        if chat_id is None:
+            # Dos chats abiertos en el mismo segundo tendrían el mismo id y el segundo se
+            # metería adentro del primero. Pasa de verdad: el panel abre uno al cargar, y
+            # un doble clic alcanza.
+            base, sufijo = nuevo, 2
+            while self.ruta_chat(nuevo).exists():
+                nuevo = f"{base}-{sufijo}"
+                sufijo += 1
+        carpeta = self.ruta_chat(nuevo)
+        carpeta.mkdir(parents=True, exist_ok=True)
+        self._escribir_meta_chat(
+            nuevo,
+            {
+                "titulo": titulo,
+                "creado": ahora.isoformat(),
+                "ultima_actividad": ahora.isoformat(),
+            },
+        )
+        return self.chat(nuevo)
+
+    def anotar_chat(self, chat_id: str, rol: str, texto: str) -> Mensaje:
+        """Suma un mensaje al transcript, incrementalmente."""
+        mensaje = Mensaje(momento=datetime.now(timezone.utc), rol=rol, texto=texto)
+        archivo = self.ruta_historial_chat(chat_id)
+        archivo.parent.mkdir(parents=True, exist_ok=True)
+        with archivo.open("a", encoding="utf-8") as salida:
+            salida.write(json.dumps(mensaje.a_dict(), ensure_ascii=False) + "\n")
+        self._tocar_chat(chat_id)
+        return mensaje
+
+    def registrar_sesion_chat(self, chat_id: str, id_sesion: str | None) -> None:
+        """Guarda el id de sesión del proveedor, que es lo que permite reanudar."""
+        if id_sesion:
+            self._escribir_meta_chat(chat_id, {"id_sesion": id_sesion})
+
+    def titular_chat(self, chat_id: str, titulo: str) -> None:
+        self._escribir_meta_chat(chat_id, {"titulo": titulo})
+
+    def borrar_chat(self, chat_id: str) -> bool:
+        """Saca un chat entero. La única forma de que un chat desaparezca (ADR-0043)."""
+        import shutil
+
+        carpeta = self.ruta_chat(chat_id)
+        if not carpeta.is_dir():
+            return False
+        shutil.rmtree(carpeta)
+        return True
+
+    def _tocar_chat(self, chat_id: str) -> None:
+        self._escribir_meta_chat(chat_id, {"ultima_actividad": datetime.now(timezone.utc).isoformat()})
+
+    def _escribir_meta_chat(self, chat_id: str, cambios: dict[str, Any]) -> None:
+        carpeta = self.ruta_chat(chat_id)
+        carpeta.mkdir(parents=True, exist_ok=True)
+        archivo = carpeta / "meta.yaml"
+        actual = _leer_yaml(archivo)
+        actual.update({k: v for k, v in cambios.items() if v is not None})
+        actual.setdefault("creado", datetime.now(timezone.utc).isoformat())
+        archivo.write_text(
+            yaml.safe_dump(actual, allow_unicode=True, sort_keys=False), encoding="utf-8"
+        )
 
     # ── escrituras (Encargado y Workspace Broker, no el panel) ───────────────
 

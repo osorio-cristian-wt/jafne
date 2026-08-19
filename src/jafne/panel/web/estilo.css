@@ -330,6 +330,44 @@ main {
 
 /* ── chat ───────────────────────────────────────────────────────────────── */
 
+/* Histórico de chats (ADR-0043). Va arriba del hilo, en una sola línea: es navegación,
+   no contenido, y no tiene que competir con la conversación. */
+.historial {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--borde);
+}
+
+.historial-lista {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--texto);
+  background: var(--superficie-2);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+}
+
+.historial-lista:focus { outline: 2px solid var(--acento-suave); border-color: var(--acento); }
+
+.boton-chico {
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--texto);
+  background: var(--superficie-2);
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.boton-chico:hover { border-color: var(--acento); color: var(--acento); }
+.boton-chico.peligro:hover { border-color: var(--bloqueado); color: var(--bloqueado); }
+
 .chat-hilo {
   padding: 18px;
   display: grid;
@@ -450,6 +488,34 @@ button:hover { filter: brightness(1.08); }
 }
 
 .vacio { color: var(--texto-suave); font-size: 14px; }
+
+/* Por qué un Asunto está parado. Usa el color de `bloqueado` porque es lo mismo que
+   comunica: no se rompió nada, falta algo que todavía no está. */
+.aviso {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--bloqueado);
+  background: var(--bloqueado-fondo);
+  color: var(--bloqueado);
+  border-radius: 0 var(--radio) var(--radio) 0;
+  font-size: 13px;
+}
+
+/* El registro del Workspace: con `krun` no hay `exec`, así que esto es la única ventana
+   a lo que pasó adentro. Se muestra tal cual, con scroll propio y sin recortar. */
+.registro {
+  margin: 0;
+  padding: 12px;
+  max-height: 420px;
+  overflow: auto;
+  background: var(--superficie-2);
+  border: 1px solid var(--borde);
+  border-radius: var(--radio);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 .pie {
   max-width: 1180px;

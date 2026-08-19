@@ -4,6 +4,7 @@ from .almacen import (
     Almacen,
     AlmacenNoInicializado,
     AsuntoDesconocido,
+    ChatDesconocido,
     IdInvalido,
     ProyectoDesconocido,
     SaldoInvalido,
@@ -27,7 +28,7 @@ from .estados import (
     validar_transicion,
     validar_transicion_contenedor,
 )
-from .modelos import Asunto, Cerebro, Mensaje, Proyecto, Suscripcion, Ventana
+from .modelos import Asunto, Cerebro, Chat, Mensaje, Proyecto, Suscripcion, Ventana
 
 __all__ = [
     "DESCRIPCIONES",
@@ -40,6 +41,8 @@ __all__ = [
     "Asunto",
     "AsuntoDesconocido",
     "Cerebro",
+    "Chat",
+    "ChatDesconocido",
     "Cierre",
     "EstadoAsunto",
     "EstadoContenedor",

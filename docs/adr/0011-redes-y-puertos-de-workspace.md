@@ -1,6 +1,6 @@
 # ADR-0011 — Redes y puertos de un Workspace: aislamiento por proyecto, comunicación intra-proyecto y exposición vía ZeroTier
 
-- **Estado**: Aceptada
+- **Estado**: Aceptada. *Matizada por [ADR-0050](./0050-descubrimiento-por-alias-y-registro-de-puertos.md).*
 - **Fecha**: 2026-07-23
 
 ## Contexto

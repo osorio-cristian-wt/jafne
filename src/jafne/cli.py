@@ -210,17 +210,78 @@ def _cmd_saldo(args: argparse.Namespace) -> int:
             print(f"Error: '{args.resetea}' no es una fecha ISO 8601.", file=sys.stderr)
             return 2
 
-    suscripcion = almacen.registrar_saldo(
-        args.proveedor,
-        args.ventana,
-        args.restante,
-        resetea=resetea,
-        plan=args.plan,
-        fuente=args.fuente,
-    )
-    print(f"{suscripcion.proveedor}/{args.ventana}: queda {args.restante:.0%}.")
-    if suscripcion.agotado:
+    # Escribir el saldo es de Infraestructura, no de la CLI (ADR-0025, ADR-0042). Leerlo
+    # sigue siendo local: leer no compite con nadie. Si Infraestructura está apagada esto
+    # falla diciéndolo, en vez de escribir el archivo por atrás y volver a tener dos
+    # escritores sin coordinación.
+    from .infraestructura import InfraestructuraInalcanzable, registrar_saldo_remoto
+
+    try:
+        crudo = registrar_saldo_remoto(
+            args.proveedor,
+            args.ventana,
+            args.restante,
+            resetea=resetea,
+            plan=args.plan,
+            fuente=args.fuente,
+            url=getattr(args, "infra", None),
+        )
+    except InfraestructuraInalcanzable as error:
+        print(f"Error: {error}", file=sys.stderr)
+        return 2
+
+    print(f"{args.proveedor}/{args.ventana}: queda {args.restante:.0%}.")
+    if any(v.get("agotada") for v in (crudo.get("ventanas") or [])):
         print("Alguna ventana quedó en cero: por ahí no entra ninguna llamada.")
+    return 0
+
+
+def _cmd_infra(args: argparse.Namespace) -> int:
+    """Levanta Infraestructura: Workspaces, saldo y el servidor MCP (ADR-0042).
+
+    Es el cuarto proceso de JAFNE. A diferencia del panel, este **escribe estado y crea
+    máquinas**, así que su token pesa más.
+    """
+    from .acceso import aviso_sin_tls
+    from .infraestructura import (
+        PUERTO_POR_DEFECTO,
+        VARIABLE_NODO,
+        resolver_tls,
+        resolver_token,
+        servir,
+        validar_bind,
+    )
+    from .nucleo.workspaces import Broker
+
+    validar_bind(args.host, resolver_token(args.token))
+    tls = resolver_tls(args.cert, args.clave)
+    esquema = "https" if tls else "http"
+    base = f"{esquema}://{args.host}:{args.puerto}"
+
+    print(f"Infraestructura de JAFNE en {base}")
+
+    estado = Broker().estado()
+    if estado.get("motor"):
+        print(f"  motor     {estado['version'] or estado['motor']}")
+        print(f"  runtimes  {', '.join(estado['runtimes']) or 'ninguno'}")
+    if estado.get("detalle"):
+        print(f"  aviso     {estado['detalle']}")
+
+    print(f"\n  MCP del Asistente   {base}/mcp/asistente")
+    print(f"  MCP de un Encargado {base}/mcp/proyecto/<id>")
+    print(f"\nDel lado de la CLI: {VARIABLE_NODO}={base}")
+
+    aviso = None if tls else aviso_sin_tls(args.host)
+    if aviso:
+        print(f"\nAVISO: {aviso}")
+
+    servir(
+        host=args.host,
+        puerto=args.puerto or PUERTO_POR_DEFECTO,
+        token=args.token,
+        cert=args.cert,
+        clave=args.clave,
+    )
     return 0
 
 
@@ -523,6 +584,11 @@ def construir_parser() -> argparse.ArgumentParser:
     p_saldo.add_argument("--resetea", help="Cuándo se llena de nuevo, en ISO 8601.")
     p_saldo.add_argument("--plan", help="Nombre del plan contratado: pro, max…")
     p_saldo.add_argument("--fuente", help="De dónde salió el dato. Ej: 'claude-code /usage'.")
+    p_saldo.add_argument(
+        "--infra",
+        help="Dónde corre Infraestructura, que es quien escribe el saldo (ADR-0042). "
+        "También $JAFNE_INFRA.",
+    )
     p_saldo.set_defaults(func=_cmd_saldo)
 
     sub.add_parser(
@@ -600,6 +666,24 @@ def construir_parser() -> argparse.ArgumentParser:
         "--clave", help="Clave del certificado. También $JAFNE_PANEL_CLAVE."
     )
     p_panel.set_defaults(func=_cmd_panel)
+
+    p_infra = sub.add_parser(
+        "infra",
+        help="Levanta Infraestructura: Workspaces, saldo y servidor MCP (ADR-0042).",
+    )
+    p_infra.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Loopback, o la IP de la interfaz ZeroTier. Nunca 0.0.0.0 (ADR-0020).",
+    )
+    p_infra.add_argument("--puerto", type=int, default=8732)
+    p_infra.add_argument(
+        "--token",
+        help="Token compartido; obligatorio fuera de loopback. También $JAFNE_INFRA_TOKEN.",
+    )
+    p_infra.add_argument("--cert", help="Certificado TLS (ADR-0038). También $JAFNE_INFRA_CERT.")
+    p_infra.add_argument("--clave", help="Clave del certificado. También $JAFNE_INFRA_CLAVE.")
+    p_infra.set_defaults(func=_cmd_infra)
 
     return parser
 

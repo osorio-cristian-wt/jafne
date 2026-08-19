@@ -1,6 +1,6 @@
 # ADR-0016 — Catálogo cerrado de `estado_contenedor`
 
-- **Estado**: Aceptada
+- **Estado**: Aceptada. *Matizada por [ADR-0047](./0047-los-contenedores-son-por-repositorio.md).*
 - **Fecha**: 2026-08-11
 
 ## Contexto

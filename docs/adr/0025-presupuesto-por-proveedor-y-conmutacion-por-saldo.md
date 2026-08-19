@@ -1,6 +1,6 @@
 # ADR-0025 — Presupuesto por proveedor: el objetivo es el saldo, y quien cuenta es Infraestructura
 
-- **Estado**: Aceptada
+- **Estado**: Aceptada, matizada por [ADR-0042](./0042-infraestructura-es-un-proceso-con-el-mcp-adentro.md)
 - **Fecha**: 2026-08-11
 
 ## Contexto

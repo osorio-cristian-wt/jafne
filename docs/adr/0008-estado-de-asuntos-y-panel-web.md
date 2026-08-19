@@ -1,6 +1,6 @@
 # ADR-0008 — Estado de Asuntos, estado de contenedor y panel web de observabilidad
 
-- **Estado**: Aceptada
+- **Estado**: Aceptada, matizada por [ADR-0043](./0043-los-chats-del-asistente-se-guardan.md)
 - **Fecha**: 2026-07-23
 
 ## Contexto

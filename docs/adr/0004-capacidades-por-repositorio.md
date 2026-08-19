@@ -1,6 +1,6 @@
 # ADR-0004 — Capacidades (skills + MCP) por repositorio
 
-- **Estado**: Aceptada
+- **Estado**: Aceptada. *Su cadena de escalación fue reemplazada por [ADR-0049](./0049-el-encargado-siembra-el-entorno-y-las-skills-de-un-repo.md); el almacenamiento en el repo sigue vigente.*
 - **Fecha**: 2026-07-23
 
 ## Contexto

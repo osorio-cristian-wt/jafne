@@ -1,6 +1,6 @@
 # ADR-0013 — Panel web como dashboard visual: proyectos, chat y uso de suscripciones
 
-- **Estado**: Aceptada
+- **Estado**: Aceptada, matizada por [ADR-0039](./0039-el-chat-del-panel-usa-herramientas-acotadas-a-la-raiz-de-repos.md) y [ADR-0043](./0043-los-chats-del-asistente-se-guardan.md)
 - **Fecha**: 2026-08-11
 
 ## Contexto

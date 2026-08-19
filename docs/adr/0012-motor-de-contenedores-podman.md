@@ -1,6 +1,6 @@
 # ADR-0012 — Motor de contenedores por defecto: Podman
 
-- **Estado**: Aceptada, matizada por [ADR-0032](./0032-driver-de-la-clase-generado.md)
+- **Estado**: Aceptada, matizada por [ADR-0032](./0032-driver-de-la-clase-generado.md), [ADR-0042](./0042-infraestructura-es-un-proceso-con-el-mcp-adentro.md), [ADR-0046](./0046-el-cerebro-corre-afuera-el-contenedor-ejecuta.md) y [ADR-0048](./0048-el-repo-declara-su-entorno-de-desarrollo.md)
 - **Fecha**: 2026-07-23
 
 ## Contexto

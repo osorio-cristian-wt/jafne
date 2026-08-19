@@ -191,8 +191,10 @@ def test_la_conversacion_del_asistente_se_reusa_entre_turnos(cliente, monkeypatc
             return None
 
     monkeypatch.setitem(adaptadores.REGISTRO, "anthropic", AdaptadorFalso)
-    cliente.post("/api/chat/asistente", json={"mensaje": "uno"})
-    cliente.post("/api/chat/asistente", json={"mensaje": "dos"})
+    # Con el id del chat, que es lo que manda el panel en cada turno (ADR-0043). Sin él,
+    # cada turno abriría un chat nuevo — que es el default que el Usuario pidió.
+    chat_id = cliente.post("/api/chat/asistente", json={"mensaje": "uno"}).json()["chat"]
+    cliente.post("/api/chat/asistente", json={"mensaje": "dos", "chat": chat_id})
     assert len(construidos) == 1
 
 
@@ -232,9 +234,13 @@ def test_el_chat_le_dice_al_adaptador_con_que_rol_habla(cliente, monkeypatch):
     assert recibidos[0]["rol"] is Rol.ASISTENTE
 
 
-def test_el_chat_no_escribe_estado(cliente, almacen, monkeypatch):
-    # ADR-0035 le devolvió al panel la propiedad de no escribir estado, y el chat no la
-    # rompe: la sesión vive en memoria del proceso, no en ~/.jafne/.
+def test_el_chat_escribe_su_chat_pero_no_toca_los_asuntos(cliente, almacen, monkeypatch):
+    """La regla que ADR-0035 devolvió entera queda acotada, no rota (ADR-0043).
+
+    El panel **sí** escribe ahora, y solo en `chats/`. El eje que ADR-0008 y ADR-0013
+    protegen es el estado de los **Asuntos**, y eso sigue intacto: un chat no tiene estado,
+    ni contenedor, ni cierre.
+    """
     from jafne.nucleo import adaptadores
     from jafne.nucleo.sesion import Evento, TipoEvento
 
@@ -258,27 +264,274 @@ def test_el_chat_no_escribe_estado(cliente, almacen, monkeypatch):
             return None
 
     monkeypatch.setitem(adaptadores.REGISTRO, "anthropic", AdaptadorFalso)
-    antes = sorted(p.name for p in almacen.ruta.iterdir())
+    asuntos_antes = {(a.proyecto, a.id, a.estado_asunto) for a in almacen.asuntos()}
     cliente.post("/api/chat/asistente", json={"mensaje": "hola"})
-    assert sorted(p.name for p in almacen.ruta.iterdir()) == antes
+
+    assert {(a.proyecto, a.id, a.estado_asunto) for a in almacen.asuntos()} == asuntos_antes
+    assert almacen.chats(), "el chat tiene que haber quedado guardado"
+
+
+def _adaptador_falso(monkeypatch, texto="ok"):
+    """Un proveedor de mentira, para los tests de chats guardados."""
+    from jafne.nucleo import adaptadores
+    from jafne.nucleo.sesion import Evento, TipoEvento
+
+    reanudados = []
+
+    class AdaptadorFalso:
+        proveedor = "anthropic"
+        id_sesion = "sesion-del-proveedor"
+
+        def __init__(self, **_):
+            pass
+
+        def abrir(self, directorio, tamano):
+            return self.id_sesion
+
+        def reanudar(self, id_sesion):
+            reanudados.append(id_sesion)
+
+        def emitir(self, mensaje):
+            yield Evento(tipo=TipoEvento.TEXTO, texto=texto)
+
+        def saldo(self):
+            return None
+
+    monkeypatch.setitem(adaptadores.REGISTRO, "anthropic", AdaptadorFalso)
+    return reanudados
+
+
+# ── chats guardados (ADR-0043) ───────────────────────────────────────────────
+
+
+def test_un_turno_sin_chat_abre_uno_nuevo(cliente, monkeypatch):
+    # "Nuevo por defecto, pero con histórico" — lo que el Usuario pidió.
+    _adaptador_falso(monkeypatch)
+    cuerpo = cliente.post("/api/chat/asistente", json={"mensaje": "hola"}).json()
+    assert cuerpo["chat"]
+    assert [c["id"] for c in cliente.get("/api/chats").json()] == [cuerpo["chat"]]
+
+
+def test_se_guardan_las_dos_puntas_de_la_conversacion(cliente, monkeypatch):
+    _adaptador_falso(monkeypatch, texto="te escuché")
+    chat_id = cliente.post("/api/chat/asistente", json={"mensaje": "hola"}).json()["chat"]
+    mensajes = cliente.get(f"/api/chats/{chat_id}").json()["mensajes"]
+    assert [(m["rol"], m["texto"]) for m in mensajes] == [
+        ("usuario", "hola"),
+        ("asistente", "te escuché"),
+    ]
+
+
+def test_se_guarda_el_id_de_sesion_del_proveedor(cliente, monkeypatch):
+    # Es lo que permite reanudar sin reinyectar el historial (ADR-0031).
+    _adaptador_falso(monkeypatch)
+    chat_id = cliente.post("/api/chat/asistente", json={"mensaje": "hola"}).json()["chat"]
+    assert cliente.get(f"/api/chats/{chat_id}").json()["id_sesion"] == "sesion-del-proveedor"
+
+
+def test_el_titulo_sale_del_primer_mensaje(cliente, monkeypatch):
+    # Recién ahí se sabe de qué es la conversación; pedirlo antes es fricción por nada.
+    _adaptador_falso(monkeypatch)
+    chat_id = cliente.post(
+        "/api/chat/asistente", json={"mensaje": "arreglar el panel"}
+    ).json()["chat"]
+    assert cliente.get(f"/api/chats/{chat_id}").json()["titulo"] == "arreglar el panel"
+
+
+def test_el_titulo_no_se_pisa_en_el_segundo_turno(cliente, monkeypatch):
+    _adaptador_falso(monkeypatch)
+    chat_id = cliente.post("/api/chat/asistente", json={"mensaje": "el primero"}).json()["chat"]
+    cliente.post("/api/chat/asistente", json={"mensaje": "el segundo", "chat": chat_id})
+    assert cliente.get(f"/api/chats/{chat_id}").json()["titulo"] == "el primero"
+
+
+def test_retomar_un_chat_reanuda_la_sesion_del_proveedor(cliente, monkeypatch):
+    """Reanudar, no reinyectar: el historial lo tiene el proveedor (ADR-0031).
+
+    Es lo que hace que retomar un chat viejo sea barato — no se le vuelve a mandar toda la
+    conversación, se le pasa el id y él la rehidrata.
+    """
+    reanudados = _adaptador_falso(monkeypatch)
+    chat_id = cliente.post("/api/chat/asistente", json={"mensaje": "uno"}).json()["chat"]
+
+    # Un panel reiniciado: el adaptador en memoria ya no está, pero el chat sí.
+    cliente.app.state.sesiones.clear()
+    cliente.post("/api/chat/asistente", json={"mensaje": "dos", "chat": chat_id})
+    assert reanudados == ["sesion-del-proveedor"]
+
+
+def test_dos_chats_del_mismo_segundo_no_se_pisan(cliente, monkeypatch, almacen):
+    # El panel abre uno al cargar, y un doble clic alcanza para que caigan en el mismo
+    # segundo. Sin id único el segundo se metía adentro del primero.
+    _adaptador_falso(monkeypatch)
+    uno = cliente.post("/api/chats").json()["id"]
+    otro = cliente.post("/api/chats").json()["id"]
+    assert uno != otro
+    assert len(almacen.chats()) == 2
+
+
+def test_los_chats_se_listan_del_mas_nuevo_al_mas_viejo(cliente, almacen):
+    almacen.abrir_chat(chat_id="20260101-000000")
+    almacen.abrir_chat(chat_id="20260819-000000")
+    assert [c["id"] for c in cliente.get("/api/chats").json()][0] == "20260819-000000"
+
+
+def test_un_chat_se_borra_a_mano_y_no_caduca(cliente, monkeypatch, almacen):
+    # No caducan y no se borran solos: los saca el Usuario cuando quiere (ADR-0043).
+    _adaptador_falso(monkeypatch)
+    chat_id = cliente.post("/api/chat/asistente", json={"mensaje": "hola"}).json()["chat"]
+    assert cliente.delete(f"/api/chats/{chat_id}").json()["borrado"] is True
+    assert almacen.chats() == []
+
+
+def test_un_chat_que_no_existe_da_404(cliente):
+    assert cliente.get("/api/chats/20200101-000000").status_code == 404
+
+
+def test_el_chat_del_encargado_no_se_guarda(cliente, monkeypatch, almacen):
+    """El trabajo con un Encargado es un Asunto (ADR-0006, ADR-0043).
+
+    Duplicarlo como chat dejaría dos lugares donde vive lo mismo, y ninguno sería
+    claramente el bueno.
+    """
+    _adaptador_falso(monkeypatch)
+    cliente.post("/api/proyectos/borr/chat", json={"mensaje": "hola"})
+    assert almacen.chats() == []
 
 
 def test_el_chat_del_encargado_valida_el_proyecto_primero(cliente):
     assert cliente.post("/api/proyectos/inexistente/chat", json={"mensaje": "x"}).status_code == 404
 
 
-def test_el_encargado_sin_tarea_no_tiene_cerebro_y_se_dice(cliente):
-    """ADR-0033 no le dio default al Encargado: lo elige **por tarea**.
+def test_el_chat_del_encargado_ya_no_es_un_501(cliente, monkeypatch):
+    """El Usuario le dio tamaño al Encargado: `grande` (ADR-0044).
 
-    Una conversación todavía no es una tarea, así que no hay de dónde sacar el tamaño. El
-    panel lo declara como decisión pendiente en vez de inventar un default — que es la
-    regla de ADR-0015 y lo que mantiene confiable a `jafne pendientes`.
+    Ese endpoint respondía 501 citando `cerebro-del-encargado-conversando`, que era una
+    decisión abierta de verdad: conversando no hay tarea de donde derivar el tamaño. Con la
+    decisión tomada, el pendiente salió del registro y el chat contesta.
     """
+    from jafne.nucleo import adaptadores
+    from jafne.nucleo.sesion import Evento, TipoEvento
+
+    class AdaptadorFalso:
+        proveedor = "anthropic"
+        id_sesion = "s1"
+
+        def __init__(self, **_):
+            pass
+
+        def abrir(self, directorio, tamano):
+            return self.id_sesion
+
+        def reanudar(self, id_sesion):
+            pass
+
+        def emitir(self, mensaje):
+            yield Evento(tipo=TipoEvento.TEXTO, texto="soy el Encargado")
+
+        def saldo(self):
+            return None
+
+    monkeypatch.setitem(adaptadores.REGISTRO, "anthropic", AdaptadorFalso)
     respuesta = cliente.post("/api/proyectos/borr/chat", json={"mensaje": "hola"})
-    assert respuesta.status_code == 501
-    cuerpo = respuesta.json()
-    assert cuerpo["error"] == "decision_pendiente"
-    assert cuerpo["pendiente"]["clave"] == "cerebro-del-encargado-conversando"
+    assert respuesta.status_code == 200
+    assert respuesta.json()["texto"] == "soy el Encargado"
+
+
+def test_el_encargado_conversa_con_el_cerebro_grande(cliente, monkeypatch):
+    from jafne.nucleo import adaptadores
+    from jafne.nucleo.sesion import Evento, TipoEvento
+
+    recibidos = []
+
+    class AdaptadorFalso:
+        proveedor = "anthropic"
+        id_sesion = "s1"
+
+        def __init__(self, **kwargs):
+            recibidos.append(kwargs)
+
+        def abrir(self, directorio, tamano):
+            return self.id_sesion
+
+        def reanudar(self, id_sesion):
+            pass
+
+        def emitir(self, mensaje):
+            yield Evento(tipo=TipoEvento.TEXTO, texto="ok")
+
+        def saldo(self):
+            return None
+
+    monkeypatch.setitem(adaptadores.REGISTRO, "anthropic", AdaptadorFalso)
+    cliente.post("/api/proyectos/borr/chat", json={"mensaje": "hola"})
+    assert recibidos[0]["modelo"] == "claude-opus-5"
+
+
+def test_el_panel_le_dice_al_encargado_de_que_proyecto_es(cliente, monkeypatch):
+    """El proyecto acota su MCP (ADR-0042), y lo pone el panel — no el agente.
+
+    El panel sabe de qué proyecto es la conversación porque está en la URL que el Usuario
+    abrió. Si lo eligiera el agente, acotarlo sería una sugerencia.
+    """
+    from jafne.nucleo import adaptadores
+    from jafne.nucleo.sesion import Evento, TipoEvento
+
+    recibidos = []
+
+    class AdaptadorFalso:
+        proveedor = "anthropic"
+        id_sesion = "s1"
+
+        def __init__(self, **kwargs):
+            recibidos.append(kwargs)
+
+        def abrir(self, directorio, tamano):
+            return self.id_sesion
+
+        def reanudar(self, id_sesion):
+            pass
+
+        def emitir(self, mensaje):
+            yield Evento(tipo=TipoEvento.TEXTO, texto="ok")
+
+        def saldo(self):
+            return None
+
+    monkeypatch.setitem(adaptadores.REGISTRO, "anthropic", AdaptadorFalso)
+    cliente.post("/api/proyectos/borr/chat", json={"mensaje": "hola"})
+    assert recibidos[0]["proyecto"] == "borr"
+
+
+def test_el_asistente_no_se_ata_a_ningun_proyecto(cliente, monkeypatch):
+    # Ve todos: es quien enruta (ADR-0002).
+    from jafne.nucleo import adaptadores
+    from jafne.nucleo.sesion import Evento, TipoEvento
+
+    recibidos = []
+
+    class AdaptadorFalso:
+        proveedor = "anthropic"
+        id_sesion = "s1"
+
+        def __init__(self, **kwargs):
+            recibidos.append(kwargs)
+
+        def abrir(self, directorio, tamano):
+            return self.id_sesion
+
+        def reanudar(self, id_sesion):
+            pass
+
+        def emitir(self, mensaje):
+            yield Evento(tipo=TipoEvento.TEXTO, texto="ok")
+
+        def saldo(self):
+            return None
+
+    monkeypatch.setitem(adaptadores.REGISTRO, "anthropic", AdaptadorFalso)
+    cliente.post("/api/chat/asistente", json={"mensaje": "hola"})
+    assert recibidos[0]["proyecto"] is None
 
 
 def test_las_decisiones_pendientes_son_consultables(cliente):
@@ -376,10 +629,14 @@ def test_el_agente_puede_consultar_sobre_que_modelo_corre(cliente):
     assert asistente["cerebro"]["modelo"] == "claude-sonnet-5"
     assert asistente["problema"] is None
 
-    # Encargado y Agente no tienen default, y eso no es un error: ADR-0003 ya decidió
-    # que su cerebro se elige tarea por tarea.
-    assert por_rol["encargado"]["por_tarea"] is True
-    assert por_rol["encargado"]["cerebro"] is None
+    # El Encargado conversa en `grande` desde ADR-0044: los dos roles que conversan
+    # necesitaron que alguien les fijara un tamaño, porque conversando no hay tarea.
+    assert por_rol["encargado"]["tamano"] == "grande"
+    assert por_rol["encargado"]["por_tarea"] is False
+
+    # El Agente sigue sin default, y eso no es un error: ADR-0003 ya decidió que su
+    # cerebro se elige tarea por tarea, y un Agente siempre nace de una.
+    assert por_rol["agente"]["por_tarea"] is True
     assert por_rol["agente"]["tamano"] is None
 
 
@@ -390,3 +647,117 @@ def test_el_panel_reporta_la_credencial_sin_pedir_ninguna(cliente):
     # Nada que se parezca a un secreto sale por acá.
     assert "token" not in datos and "api_key" not in datos
     assert datos["verificado"] is False
+
+
+# ── mirar adentro de un Asunto (ADR-0012, ADR-0042) ──────────────────────────
+
+
+def test_el_registro_del_asunto_se_le_pide_a_infraestructura(cliente, monkeypatch):
+    # El panel no corre `podman logs`: ADR-0012 dice que solo Infraestructura habla con el
+    # motor. Se verifica que pregunta por el nombre de los tres niveles (ADR-0047).
+    import jafne.infraestructura as infra
+
+    pedidos = []
+
+    def falso(nombre, url=None, token=None):
+        pedidos.append(nombre)
+        return {"nombre": nombre, "existe": True, "registro": "hola", "detalle": None}
+
+    monkeypatch.setattr(infra, "registro_remoto", falso)
+    cuerpo = cliente.get("/api/asuntos/borr/migrar-bff/registro?repo=bff").json()
+    assert cuerpo["registro"] == "hola"
+    assert pedidos == ["jafne-borr-migrar-bff-bff"]
+
+
+def test_si_infraestructura_esta_apagada_el_registro_lo_dice(cliente, monkeypatch):
+    # Un registro vacío se leería como "el Workspace no escribió nada", que es el
+    # diagnóstico equivocado. Con Infraestructura caída hay que decir eso.
+    import jafne.infraestructura as infra
+
+    def falso(nombre, url=None, token=None):
+        raise infra.InfraestructuraInalcanzable("no se pudo hablar con Infraestructura")
+
+    monkeypatch.setattr(infra, "registro_remoto", falso)
+    cuerpo = cliente.get("/api/asuntos/borr/migrar-bff/registro?repo=bff").json()
+    assert cuerpo["existe"] is False
+    assert "Infraestructura" in cuerpo["detalle"]
+
+
+# ── la identidad de cada rol (ADR-0040, ADR-0042, ADR-0044) ──────────────────
+
+
+def test_la_identidad_del_asistente_trae_su_prompt_y_su_punto_de_entrada(
+    cliente, monkeypatch
+):
+    # Lo que antes había que deducir leyendo el código: con qué texto arranca el rol y a
+    # qué MCP lo apunta JAFNE.
+    import jafne.infraestructura as infra
+
+    monkeypatch.setattr(
+        infra, "herramientas_remotas", lambda *a, **k: [{"name": "proyectos_listar"}]
+    )
+    datos = cliente.get("/api/roles/asistente/identidad").json()
+    assert datos["prompt_archivo"] == "asistente.md"
+    assert "Asistente" in datos["prompt"]
+    assert datos["mcp_url"].endswith("/mcp/asistente")
+    assert datos["herramientas"][0]["name"] == "proyectos_listar"
+
+
+def test_la_identidad_del_encargado_apunta_al_mcp_de_su_proyecto(cliente, monkeypatch):
+    # El acotamiento de ADR-0042 viaja en la URL, así que tiene que verse en la URL.
+    import jafne.infraestructura as infra
+
+    monkeypatch.setattr(infra, "herramientas_remotas", lambda *a, **k: [])
+    datos = cliente.get("/api/roles/encargado/identidad?proyecto=borr").json()
+    assert datos["mcp_url"].endswith("/mcp/proyecto/borr")
+
+
+def test_el_agente_muestra_su_prompt_y_dice_por_que_no_tiene_mcp(cliente):
+    # Ya tiene prompt (ADR-0047/0048 contestaron qué es un repo), pero sigue sin MCP: su
+    # alcance es un repositorio y el servidor no expone ese recorte (ADR-0044). El panel
+    # tiene que mostrar las dos cosas sin tratar la segunda como un error.
+    datos = cliente.get("/api/roles/agente/identidad").json()
+    assert datos["prompt_archivo"] == "agente.md"
+    assert "repositorio" in datos["prompt"]
+    assert datos["mcp_url"] is None
+    assert "repositorio" in datos["detalle"]
+
+
+def test_si_infraestructura_esta_apagada_la_identidad_lo_dice(cliente, monkeypatch):
+    import jafne.infraestructura as infra
+
+    def falso(*a, **k):
+        raise infra.InfraestructuraInalcanzable("Infraestructura no contesta")
+
+    monkeypatch.setattr(infra, "herramientas_remotas", falso)
+    datos = cliente.get("/api/roles/asistente/identidad").json()
+    assert datos["herramientas"] == []
+    assert "Infraestructura" in datos["detalle"]
+
+
+# ── capacidades de un repo (ADR-0004) ────────────────────────────────────────
+
+
+def test_las_capacidades_de_un_repo_se_sirven_por_el_panel(cliente, tmp_path, monkeypatch):
+    import jafne.panel.api as panel_api
+
+    (tmp_path / "mi-repo" / ".agents" / "skills" / "una").mkdir(parents=True)
+    (tmp_path / "mi-repo" / ".agents" / "skills" / "una" / "SKILL.md").write_text(
+        "---\nname: una\ndescription: Hace algo.\n---\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(panel_api, "raiz_de_trabajo", lambda: str(tmp_path))
+    datos = cliente.get("/api/repos/mi-repo/capacidades").json()
+    assert datos["existe"] is True
+    assert datos["skills"][0]["nombre"] == "una"
+
+
+def test_no_se_pueden_leer_capacidades_fuera_de_la_raiz_de_trabajo(
+    cliente, tmp_path, monkeypatch
+):
+    # El borde de ADR-0039 vale también para leer: sin esto, un `..` en el nombre dejaría
+    # listar cualquier carpeta del disco a través del panel.
+    import jafne.panel.api as panel_api
+
+    monkeypatch.setattr(panel_api, "raiz_de_trabajo", lambda: str(tmp_path))
+    respuesta = cliente.get("/api/repos/..%2F..%2Fetc/capacidades")
+    assert respuesta.status_code == 404
