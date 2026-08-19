@@ -1,6 +1,6 @@
 # ADR-0035 — El reloj corre en su propio proceso, separado del panel
 
-- **Estado**: Aceptada
+- **Estado**: Aceptada, matizada por [ADR-0043](./0043-los-chats-del-asistente-se-guardan.md)
 - **Fecha**: 2026-08-19
 - **Reemplaza a**: [ADR-0029](./0029-el-reloj-corre-en-el-proceso-del-panel.md)
 

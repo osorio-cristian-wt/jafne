@@ -42,7 +42,7 @@ import subprocess
 import uuid
 from collections.abc import Iterator
 
-from . import credenciales, prompts
+from . import credenciales, mcp, prompts
 from .modelos import Suscripcion
 from .roles import Rol
 from .sesion import Evento, TipoEvento
@@ -98,12 +98,14 @@ class AdaptadorAnthropic:
         raiz_trabajo: str | None = None,
         espera: int = ESPERA_TURNO,
         rol: Rol | None = None,
+        proyecto: str | None = None,
     ) -> None:
         self._modelo = modelo
         self._cli = cli
         self._raiz = raiz_trabajo or raiz_de_trabajo()
         self._espera = espera
         self._rol = rol
+        self._proyecto = proyecto
         self._id_sesion: str | None = None
         self._directorio: str | None = None
         self._estrenada = False
@@ -239,6 +241,16 @@ class AdaptadorAnthropic:
             ruta_prompt = prompts.ruta_prompt(self._rol)
             if ruta_prompt is not None:
                 comando += ["--append-system-prompt-file", str(ruta_prompt)]
+
+            # El MCP de JAFNE, acotado al rol (ADR-0042). La URL la arma JAFNE, así que el
+            # alcance no depende de lo que el agente diga de sí mismo.
+            configuracion = mcp.configuracion(self._rol, self._proyecto)
+            if configuracion:
+                comando += ["--mcp-config", configuracion]
+                # Sin esto el agente **ve** las herramientas y no las puede usar: la
+                # llamada queda esperando una aprobación que desde el panel no hay quién
+                # dar. Verificado contra la CLI real el 2026-08-19.
+                comando += ["--allowed-tools", mcp.HERRAMIENTAS_PERMITIDAS]
         return comando
 
     def _correr(self, comando: list[str]) -> subprocess.CompletedProcess:
@@ -270,6 +282,9 @@ def construir(
     modelo: str | None = None,
     raiz_trabajo: str | None = None,
     rol: Rol | None = None,
+    proyecto: str | None = None,
 ) -> AdaptadorAnthropic:
     """Un adaptador listo para usar, con el modelo del cerebro que lo pidió."""
-    return AdaptadorAnthropic(modelo=modelo, raiz_trabajo=raiz_trabajo, rol=rol)
+    return AdaptadorAnthropic(
+        modelo=modelo, raiz_trabajo=raiz_trabajo, rol=rol, proyecto=proyecto
+    )

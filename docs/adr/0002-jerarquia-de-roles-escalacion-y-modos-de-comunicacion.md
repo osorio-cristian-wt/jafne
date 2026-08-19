@@ -1,6 +1,6 @@
 # ADR-0002 — Jerarquía de roles, escalación y modos de comunicación
 
-- **Estado**: Aceptada
+- **Estado**: Aceptada, matizada por [ADR-0044](./0044-la-cadena-de-delegacion.md)
 - **Fecha**: 2026-07-23
 
 ## Contexto

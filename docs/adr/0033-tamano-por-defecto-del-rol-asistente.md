@@ -1,6 +1,6 @@
 # ADR-0033 — El Asistente corre en `medio` por defecto; los demás roles se eligen por tarea
 
-- **Estado**: Aceptada
+- **Estado**: Aceptada, matizada por [ADR-0044](./0044-la-cadena-de-delegacion.md)
 - **Fecha**: 2026-08-18
 
 ## Contexto

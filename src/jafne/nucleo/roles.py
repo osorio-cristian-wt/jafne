@@ -1,12 +1,17 @@
-"""Los roles que ejecutan un cerebro, y qué tamaño les toca (ADR-0002, ADR-0033).
+"""Los roles que ejecutan un cerebro, y qué tamaño les toca (ADR-0002, ADR-0033, ADR-0044).
 
 El catálogo sale de la jerarquía de ADR-0002. El Usuario no está: es humano y no tiene
 cerebro asignado.
 
-Solo el **Asistente** tiene tamaño por defecto. Que el Encargado y el Agente no lo tengan
-no es un hueco: ADR-0003 ya decidió que el cerebro se elige tarea por tarea, y ponerles un
-default contradiría esa decisión en vez de completarla. La dificultad la fija la tarea, no
-el escalafón.
+**Asistente** y **Encargado** tienen tamaño por defecto para *conversar*; el **Agente** no,
+y eso no es un hueco. ADR-0003 decidió que el cerebro de una tarea lo elige el Encargado, y
+un Agente siempre nace de una tarea concreta: hay de dónde derivarlo. Conversar es el caso
+raro —todavía no hay tarea—, y por eso los dos roles que conversan necesitaron que alguien
+les fijara uno.
+
+Que el Encargado vaya en `grande` y el Asistente en `medio` no es escalafón: es qué hace
+cada uno. El Asistente enruta y delega; el Encargado piensa la arquitectura y la
+organización de su proyecto, y ahí la capacidad del modelo es lo que más pesa.
 """
 
 from __future__ import annotations
@@ -30,16 +35,23 @@ DESCRIPCIONES: dict[Rol, str] = {
     Rol.AGENTE: "Ejecuta una tarea concreta dentro de un Workspace.",
 }
 
-#: Tamaño por defecto de cada rol (ADR-0033).
+#: Tamaño por defecto de cada rol (ADR-0033, ADR-0044).
 #:
 #: El Asistente va en `medio`: conversa, enruta y delega, y el trabajo difícil lo hace el
 #: nivel de abajo. Un rol que delega no necesita el cerebro más caro para decidir a quién
 #: delegarle.
 #:
-#: Los otros dos **no figuran a propósito**: su cerebro lo elige el Encargado tarea por
-#: tarea (ADR-0003).
+#: El Encargado va en `grande`, y es el Usuario quien lo fijó (ADR-0044). No contradice a
+#: ADR-0003 —el cerebro de una **tarea** lo sigue eligiendo él— porque esto es el tamaño con
+#: el que *conversa*, que es otra cosa: cuando conversa todavía no hay tarea de donde
+#: derivarlo. Su trabajo al conversar es de arquitectura y de organización, y ahí la
+#: capacidad del modelo es la variable que más pesa.
+#:
+#: El Agente **no figura a propósito**: su cerebro lo elige el Encargado tarea por tarea
+#: (ADR-0003), y ahí sí hay tarea de donde derivarlo.
 TAMANO_POR_DEFECTO: dict[Rol, Tamano] = {
     Rol.ASISTENTE: Tamano.MEDIO,
+    Rol.ENCARGADO: Tamano.GRANDE,
 }
 
 
@@ -60,9 +72,9 @@ def parsear(valor: object) -> Rol:
 
 
 def tamano_por_defecto(rol: Rol) -> Tamano | None:
-    """El tamaño que le toca a ese rol, o `None` si se elige por tarea.
+    """El tamaño con el que ese rol **conversa**, o `None` si se elige por tarea.
 
     `None` no es "falta decidirlo": es la decisión de ADR-0003 de que lo elija el
-    Encargado según la tarea.
+    Encargado según la tarea. Hoy solo el Agente cae en ese caso.
     """
     return TAMANO_POR_DEFECTO.get(rol)

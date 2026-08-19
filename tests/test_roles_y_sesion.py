@@ -33,9 +33,20 @@ def test_el_asistente_corre_en_medio():
     assert tamano_por_defecto(Rol.ASISTENTE) is Tamano.MEDIO
 
 
-def test_el_encargado_y_el_agente_se_eligen_por_tarea():
-    # `None` no es "falta decidirlo": es la decisión de ADR-0003.
-    assert tamano_por_defecto(Rol.ENCARGADO) is None
+def test_el_encargado_conversa_en_grande():
+    """Lo fijó el Usuario (ADR-0044), y no contradice a ADR-0003.
+
+    Lo que ADR-0003 dejó al Encargado es el cerebro de una **tarea**. Esto es el tamaño con
+    el que *conversa*, que es cuando todavía no hay tarea de donde derivarlo — y su trabajo
+    al conversar es arquitectura y organización, donde la capacidad del modelo es lo que
+    más pesa.
+    """
+    assert tamano_por_defecto(Rol.ENCARGADO) is Tamano.GRANDE
+
+
+def test_solo_el_agente_se_elige_por_tarea():
+    # `None` no es "falta decidirlo": es la decisión de ADR-0003. Un Agente siempre nace de
+    # una tarea concreta, así que ahí sí hay de dónde derivarlo.
     assert tamano_por_defecto(Rol.AGENTE) is None
 
 
@@ -74,8 +85,14 @@ def test_sin_cerebro_usable_falla_diciendo_que_falta(alm):
     assert "adaptador" in str(excepcion.value)
 
 
+def test_el_encargado_resuelve_un_cerebro_grande(alm):
+    # ADR-0044 le dio tamaño, así que su chat dejó de responder 501.
+    assert alm.cerebro_de(Rol.ENCARGADO).tamano is Tamano.GRANDE
+
+
 def test_un_rol_sin_tamano_no_resuelve_cerebro(alm):
-    assert alm.cerebro_de(Rol.ENCARGADO) is None
+    # El Agente sigue sin default: lo elige el Encargado por tarea (ADR-0003).
+    assert alm.cerebro_de(Rol.AGENTE) is None
 
 
 # ── contrato de sesión (ADR-0031) ────────────────────────────────────────────
