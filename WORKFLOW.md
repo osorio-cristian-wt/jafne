@@ -8,8 +8,9 @@ documentación es en su mayoría **exploratoria** y evoluciona.
 En estos proyectos se documenta de tres formas, según el grado de madurez:
 
 1. **ADR** — *Architecture Decision Records*. Decisiones congeladas, una por archivo,
-   numeradas y **append-only**: una decisión superada no se edita, se crea un ADR nuevo
-   que la reemplaza. Viven en [`docs/adr/`](docs/adr/).
+   numeradas y **append-only**: el cuerpo de un ADR no se edita nunca. Lo que sí cambia es
+   su campo `Estado`, que registra si la decisión fue **reemplazada** (quedó sin efecto) o
+   **matizada** (sigue vigente, pero otra la acota). Viven en [`docs/adr/`](docs/adr/).
 2. **Casa Justina** — estándar **evolutivo/exploratorio** (inspirado en
    [casaJustina](https://github.com/osorio-cristian-wt/casaJustina) y
    [docs-organizacion](https://github.com/BoRR-Pizzeria/docs-organizacion)). Cada tema de
@@ -21,6 +22,17 @@ En estos proyectos se documenta de tres formas, según el grado de madurez:
    se estabilice y convenga una vista formal. Ver [arc42.org](https://arc42.org/).
 
 **Hoy JAFNE usa el híbrido ADR + Casa Justina.** arc42 queda como destino futuro.
+
+## Cuándo investigar y cuándo ir directo a ADR
+
+No todo pasa por `investigacion/`. La regla ([ADR-0005](docs/adr/0005-cuando-investigar-vs-adr-directo.md)):
+
+- **Investigación (Casa Justina)** — solo cuando hace falta **buscar y comparar
+  alternativas reales** antes de decidir. Ahí sí se documentan opciones y descartes.
+- **ADR directo** — cuando lo que llega es un **requisito o decisión ya tomada** (típico:
+  una instrucción directa del usuario). No se fabrican alternativas descartadas que
+  nunca se evaluaron; se escribe el ADR directo, citando el contexto real.
+- **Litmus test:** *¿esto necesita buscarse/compararse, o ya me lo decidieron?*
 
 > Estos tres modos no son arbitrarios: se mapean a la **jerarquía de roles** de JAFNE
 > (Asistente → Encargado → Agentes), donde cada nivel documenta con un estándar distinto.
@@ -36,6 +48,27 @@ flowchart LR
     R -->|se congela| ADR[docs/adr/NNNN]
     ADR -.->|si se formaliza| ARC[arc42]
 ```
+
+## La superficie de lectura: historial vs. estado
+
+Los ADR y las investigaciones son el **historial** del diseño: conservan el *por qué* y
+los descartes, que es lo único que evita que una decisión se re-litigue dentro de seis
+meses. Pero **no son de donde se saca qué es verdad hoy**: para eso habría que aplicar
+mentalmente treinta decisiones en orden, lo cual es caro y sale mal — sobre todo cuando
+dos ADR vigentes se leen sueltos y parecen contradecirse.
+
+Por eso hay dos documentos **derivados**, y son el punto de entrada de cualquiera —persona
+o agente— que necesite el estado actual:
+
+| Documento | Contesta |
+|---|---|
+| [`docs/estado-del-diseno.md`](docs/estado-del-diseno.md) | ¿Qué está **decidido** hoy? |
+| [`docs/estado-de-implementacion.md`](docs/estado-de-implementacion.md) | ¿Qué de eso ya **corre**? |
+| `src/jafne/pendientes.py` (`jafne pendientes`) | ¿Qué falta **decidir**? |
+
+Es la misma forma que JAFNE ya usa para un Asunto: `historial.jsonl` es append-only y
+completo, `meta.yaml` es chico y actual, y para decidir se lee el segundo. Los derivados se
+actualizan **en el mismo commit** que cambia su fuente.
 
 ## Estructura de una investigación (Casa Justina)
 
@@ -76,6 +109,20 @@ investigacion/<tema>/
 - **Fechas absolutas** (2026-07-23), nunca "hace dos semanas".
 - **Idioma español**; términos técnicos en inglés cuando son estándar (workspace,
   snapshot, broker).
+
+## Del documento al código
+
+Desde 2026-08-11 el repo también tiene implementación
+([ADR-0015](docs/adr/0015-stack-inicial-de-implementacion.md)), con una regla que extiende
+el mismo criterio de los tres modos de documentar: **lo que no está decidido no se
+programa**.
+
+- Una funcionalidad que depende de una pregunta abierta se declara en
+  `src/jafne/pendientes.py` y falla citando el ADR o la investigación que la bloquea, en
+  vez de resolverse con un default improvisado.
+- Sacar algo de ese registro requiere primero congelar la decisión (graduación a ADR, o
+  ADR directo), y actualizar
+  [`docs/estado-de-implementacion.md`](docs/estado-de-implementacion.md) en el mismo commit.
 
 ## Git
 
