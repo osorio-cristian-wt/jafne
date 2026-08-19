@@ -84,6 +84,70 @@ TRANSICIONES_CONTENEDOR: dict[EstadoContenedor, frozenset[EstadoContenedor]] = {
 }
 
 
+def por_que_no_avanza(
+    estado: EstadoAsunto, contenedor: EstadoContenedor | None
+) -> str | None:
+    """Por qué un Asunto está parado donde está, o `None` si no está parado.
+
+    Existe porque el panel mostraba `iniciando` y se quedaba mudo, y desde afuera eso se
+    lee como *"se colgó"*. Es **derivado, no persistido**: se calcula cada vez que se
+    pregunta, igual que `estado_efectivo` (ADR-0017).
+
+    El `estado_contenedor` que recibe es el **resumen de los Agentes** del Asunto
+    (ADR-0047), no un contenedor propio: desde ese ADR el Asunto no tiene uno.
+    """
+    if estado is not EstadoAsunto.INICIANDO:
+        return None
+    if contenedor is None:
+        return (
+            "El Asunto está abierto y todavía no delegó a ningún Agente, así que no tiene "
+            "contenedores. Es lo normal recién abierto (ADR-0047): los contenedores nacen "
+            "al delegar un Agente a un repo, no al abrir el Asunto."
+        )
+    if contenedor is EstadoContenedor.CREANDO:
+        return (
+            "Se está aprovisionando el contenedor de algún Agente: construyendo la imagen "
+            "de su `Dockerfile.dev`, la red del proyecto y los montajes. La primera vez "
+            "por repo es lenta porque construye (ADR-0048)."
+        )
+    if contenedor is EstadoContenedor.SUSPENDIDO:
+        return (
+            "Los contenedores de sus Agentes están dormidos para no gastar cómputo "
+            "(ADR-0045). Se despiertan solos cuando haya trabajo para ellos."
+        )
+    if contenedor is EstadoContenedor.DESTRUIDO:
+        return (
+            "Los contenedores de sus Agentes se destruyeron y el Asunto quedó en "
+            "`iniciando`. Hay que volver a delegar para que el trabajo siga (ADR-0018)."
+        )
+    return (
+        "Hay contenedores en pie, así que lo que falta es que el Encargado dé el primer "
+        "turno y mueva el Asunto a `interactuando_con_el_usuario`."
+    )
+
+
+def resumir_contenedores(
+    estados: "list[EstadoContenedor | None] | tuple[EstadoContenedor | None, ...]",
+) -> EstadoContenedor | None:
+    """El `estado_contenedor` de un Asunto: el resumen de los de sus Agentes (ADR-0047).
+
+    Sin Agentes es `None`, que sigue significando *"nunca tuvo"* y no `destruido`, tal como
+    ADR-0016 lo fijó. Con Agentes gana el más "vivo": basta uno en pie para que el Asunto
+    tenga dónde trabajar, y por eso `activo` domina sobre `suspendido`.
+    """
+    presentes = [e for e in estados if e is not None]
+    if not presentes:
+        return None
+    for candidato in (
+        EstadoContenedor.ACTIVO,
+        EstadoContenedor.CREANDO,
+        EstadoContenedor.SUSPENDIDO,
+    ):
+        if candidato in presentes:
+            return candidato
+    return EstadoContenedor.DESTRUIDO
+
+
 class EstadoDesconocido(ValueError):
     """Un valor que no está en el catálogo cerrado de su eje."""
 

@@ -1,6 +1,6 @@
 # ADR-0006 — Asuntos: unidad de trabajo persistente del Encargado y su ciclo de vida
 
-- **Estado**: Aceptada
+- **Estado**: Aceptada. *Matizada por [ADR-0047](./0047-los-contenedores-son-por-repositorio.md).*
 - **Fecha**: 2026-07-23
 
 ## Contexto

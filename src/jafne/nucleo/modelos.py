@@ -20,6 +20,7 @@ from .estados import (
     estado_efectivo,
     parsear,
     parsear_contenedor,
+    por_que_no_avanza,
 )
 from .tamanos import Tamano
 
@@ -200,6 +201,38 @@ class Mensaje:
 
 
 @dataclass(frozen=True)
+class Chat:
+    """Una conversación del Usuario con el Asistente, versionada (ADR-0043).
+
+    Guarda **las dos cosas**: el `id_sesion` del proveedor, que es lo que permite reanudar
+    sin reinyectar el historial (ADR-0031), y el transcript propio, que es lo que hace que
+    el histórico siga siendo legible aunque el proveedor pierda la sesión o se cambie de
+    proveedor (ADR-0003).
+
+    Un Chat **no** es un Asunto: no tiene estado, ni contenedor, ni cierre. Es la charla
+    previa a que haya trabajo. Los chats de Encargado no se guardan acá — cuando haya que
+    persistirlos serán Asuntos, que es lo que ADR-0006 ya dice que son.
+    """
+
+    id: str
+    titulo: str | None = None
+    id_sesion: str | None = None
+    creado: datetime | None = None
+    ultima_actividad: datetime | None = None
+    mensajes: int = 0
+
+    def a_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "titulo": self.titulo,
+            "id_sesion": self.id_sesion,
+            "creado": _iso(self.creado),
+            "ultima_actividad": _iso(self.ultima_actividad),
+            "mensajes": self.mensajes,
+        }
+
+
+@dataclass(frozen=True)
 class Asunto:
     """Un Asunto: la unidad persistente de trabajo del Encargado (ADR-0006).
 
@@ -258,6 +291,9 @@ class Asunto:
             "descripcion_contenedor": (
                 DESCRIPCIONES_CONTENEDOR[contenedor] if contenedor else None
             ),
+            # Derivado, nunca guardado: un Asunto parado tiene que poder decir por qué,
+            # o desde el panel se lee como si se hubiera colgado.
+            "por_que_no_avanza": por_que_no_avanza(efectivo, contenedor),
             "motivo": self.motivo,
             "rama": self.rama,
             "preview_url": self.preview_url,

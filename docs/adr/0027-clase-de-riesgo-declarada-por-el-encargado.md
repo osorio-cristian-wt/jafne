@@ -1,6 +1,6 @@
 # ADR-0027 — El Encargado declara una clase de riesgo; Infraestructura la mapea a driver
 
-- **Estado**: Aceptada
+- **Estado**: Reemplazada por [ADR-0045](./0045-para-que-existen-los-contenedores.md)
 - **Fecha**: 2026-08-18
 
 ## Contexto
