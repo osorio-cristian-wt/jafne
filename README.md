@@ -4,7 +4,7 @@
 
 JAFNE es un sistema de orquestación de ingeniería de software asistida por IA. No es un
 chatbot ni un único agente: coordina múltiples agentes de IA **y** los **entornos de
-ejecución** (workspaces efímeros) donde esos agentes diseñan, documentan, construyen,
+ejecución** (un contenedor por repositorio) donde esos agentes diseñan, documentan, construyen,
 prueban y despliegan software.
 
 > Antes se llamaba *Engineering OS*. Desde la v0.2 el proyecto es **JAFNE**
@@ -22,17 +22,24 @@ flowchart TD
     U[Usuario] --> AS[Asistente]
     AS --> EN[Encargado del proyecto]
     EN --> AG[Agentes]
-    AG -->|"pide un Workspace<br/>declarando riesgo"| WB[Workspace Broker]
-    WB --> R{Runtime}
-    R -->|revisado| C["Podman + crun"]
-    R -->|generado| M["Podman + Kata (microVM)"]
-    WB --> WS[Workspaces efímeros]
+    EN -->|delega, un Agente por repo| WB[Workspace Broker]
+    WB --> WS["Un contenedor por repositorio<br/>(persiste, se duerme, se despierta)"]
+    WS --> IMG["Imagen del Dockerfile.dev<br/>del propio repo"]
 ```
 
-El Agente declara **qué tan riesgoso** es lo que va a ejecutar, no qué tecnología quiere:
-código revisado corre en contenedor y código recién generado por un modelo corre en
-microVM ([ADR-0027](docs/adr/0027-clase-de-riesgo-declarada-por-el-encargado.md),
-[ADR-0032](docs/adr/0032-driver-de-la-clase-generado.md)).
+**Un contenedor por repositorio**, creado al delegar un Agente y no al abrir el Asunto
+([ADR-0047](docs/adr/0047-los-contenedores-son-por-repositorio.md)). Persiste mientras haga
+falta: se duerme para no gastar cómputo y se despierta cuando hay trabajo.
+
+Los contenedores existen por **dos motivos**: dormir/despertar y portabilidad
+([ADR-0045](docs/adr/0045-para-que-existen-los-contenedores.md)). El aislamiento es una
+consecuencia, no el motivo — por eso JAFNE ya **no elige runtime** y usa el default de
+Podman, que es donde `podman exec` funciona.
+
+El **cerebro corre afuera** del contenedor y la credencial nunca entra
+([ADR-0046](docs/adr/0046-el-cerebro-corre-afuera-el-contenedor-ejecuta.md)); adentro solo
+se ejecuta. El entorno lo declara **el repo** en su `Dockerfile.dev`
+([ADR-0048](docs/adr/0048-el-repo-declara-su-entorno-de-desarrollo.md)).
 
 ## Cómo está organizado este repo
 
@@ -50,7 +57,7 @@ cuando la decisión se congela y pasa a restringir el diseño o el código.
 ### Por dónde entrar
 
 `docs/adr/` es el **historial** del diseño: conserva el *por qué* y los descartes, pero
-reconstruir el estado actual leyendo treinta y cuatro decisiones en orden es caro y sale
+reconstruir el estado actual leyendo cuarenta y cuatro decisiones en orden es caro y sale
 mal. Para eso hay tres documentos derivados, y son el punto de entrada:
 
 | Querés saber… | Andá a |
@@ -64,8 +71,8 @@ completo, `meta.yaml` es chico y actual, y para decidir se lee el segundo.
 
 ## Estado
 
-🏗️ **Diseño avanzado, implementación en curso.** Treinta y cuatro ADRs congelados, siete
-decisiones abiertas y 159 tests en verde (2026-08-18).
+🏗️ **Diseño avanzado, implementación en curso.** Cincuenta ADRs congelados, seis
+decisiones abiertas y 386 tests en verde (2026-08-19).
 
 El código arrancó el 2026-08-11 bajo una regla explícita: **lo que no está decidido no se
 programa**. Lo que depende de una pregunta abierta existe como interfaz, pero falla
@@ -81,6 +88,7 @@ python -m venv .venv
 jafne init                               # crea ~/.jafne/ (ADR-0007)
 jafne panel                              # http://127.0.0.1:8730
 jafne reloj                              # el trabajo programado, en su propio proceso
+jafne infra                              # Workspaces, saldo y el servidor MCP
 jafne cerebros                           # tamaño, adaptador y señal de saldo por proveedor
 jafne credencial                         # con qué credencial habla JAFNE
 jafne pendientes                         # qué falta decidir, y qué bloquea cada cosa
@@ -118,20 +126,28 @@ apuntá `JAFNE_CLAUDE_CLI` al ejecutable que ya tenés.
 
 ## Operación
 
-JAFNE son **tres procesos independientes**, y esa independencia es una decisión, no un
+JAFNE son **cuatro procesos independientes**, y esa independencia es una decisión, no un
 accidente: el reloj se separó del panel para que cerrar el dashboard no apague el trabajo
-programado ([ADR-0035](docs/adr/0035-el-reloj-corre-en-su-propio-proceso.md)), y el nodo de
-voz vive aparte porque presta una GPU, no observa nada
-([ADR-0037](docs/adr/0037-el-dictado-puede-delegarse-a-un-nodo-con-gpu.md)).
+programado ([ADR-0035](docs/adr/0035-el-reloj-corre-en-su-propio-proceso.md)), el nodo de
+voz vive aparte porque presta una GPU y no observa nada
+([ADR-0037](docs/adr/0037-el-dictado-puede-delegarse-a-un-nodo-con-gpu.md)), e
+Infraestructura es propia porque es dueña de cosas que **sobreviven al turno que las pidió**
+—un contenedor, una microVM, la cuenta del saldo—
+([ADR-0042](docs/adr/0042-infraestructura-es-un-proceso-con-el-mcp-adentro.md)).
 
 | Proceso | Dónde corre | Para qué | Si no corre |
 |---|---|---|---|
 | `jafne panel` | Tu máquina | Dashboard: proyectos, Asuntos, saldo, chat | No hay dashboard. Nada más se detiene |
 | `jafne reloj` | Tu máquina | Dispara el trabajo programado por cadencia | No hay Asuntos disparados por tiempo |
+| `jafne infra` | Tu máquina | Workspaces, el saldo y el servidor MCP | El agente no ve el estado de los proyectos, no hay Workspaces, y `jafne saldo` falla al registrar |
 | `jafne voz` | La máquina con GPU | Transcribe el dictado del panel | El botón de dictado sale deshabilitado, con el motivo |
 
-Ninguno depende de otro para arrancar. El panel y el reloj comparten `~/.jafne/`; el nodo
-de voz **no lo toca**.
+Ninguno depende de otro para arrancar. El panel, el reloj e Infraestructura comparten
+`~/.jafne/`; el nodo de voz **no lo toca**.
+
+Del saldo hay **un solo escritor**: Infraestructura. `jafne saldo` es cliente suyo y falla
+diciéndolo si está apagada, en vez de escribir el archivo por atrás
+([ADR-0025](docs/adr/0025-presupuesto-por-proveedor-y-conmutacion-por-saldo.md), ADR-0042).
 
 ### A mano, para probar
 
@@ -141,6 +157,7 @@ cd C:\Repos\jafne
 .venv\Scripts\jafne.exe panel                  # http://127.0.0.1:8730
 .venv\Scripts\jafne.exe reloj --ver            # qué hay agendado, sin disparar nada
 .venv\Scripts\jafne.exe reloj                  # el proceso: espera y dispara
+.venv\Scripts\jafne.exe infra                  # http://127.0.0.1:8732
 ```
 
 Cada uno ocupa su consola. Para dejarlos andando solos, seguí abajo.
@@ -372,6 +389,70 @@ Safari va a pedir permiso de micrófono la primera vez que toques el botón de d
 **Si Safari muestra el texto del certificado en vez de ofrecer instalarlo**, es porque no
 reconoció el tipo de archivo: renombrá la copia a `rootCA.crt` y volvé a abrirla.
 
+### Infraestructura y el motor de contenedores
+
+Infraestructura ([ADR-0042](docs/adr/0042-infraestructura-es-un-proceso-con-el-mcp-adentro.md))
+hace tres cosas: crea los Workspaces, lleva el saldo y sirve el **servidor MCP** que el
+Asistente y los Encargados consultan para ver el estado de los proyectos.
+
+Arranca sin motor y lo dice, pero para crear Workspaces necesita **Podman**
+([ADR-0012](docs/adr/0012-motor-de-contenedores-podman.md)). En Windows corre sobre WSL2.
+
+```powershell
+winget install RedHat.Podman
+podman machine init
+podman machine start
+```
+
+Y nada más. Desde [ADR-0045](docs/adr/0045-para-que-existen-los-contenedores.md) JAFNE
+**no elige runtime**: usa el default (`crun`) y entra a los contenedores con `podman exec`.
+Ya no hay que instalar `krun` ni `libkrun`, que era lo que pedían ADR-0027 y ADR-0041
+cuando el aislamiento todavía era el motivo. Comprobá que el motor conteste:
+
+```powershell
+.venv\Scripts\jafne.exe infra          # imprime el motor y los runtimes que encontró
+```
+
+> **Una red `jafne-*` creada antes del 2026-08-19 no aísla.** Verificado contra el motor
+> real: con redes de Podman por defecto, un contenedor de un proyecto **alcanza** al de
+> otro por IP directa. Ahora se crean con `--opt isolate=true`, pero `asegurar_red` es
+> idempotente y no recrea las que ya existen. Borrá las viejas con
+> `podman network rm jafne-<proyecto>` para que se rehagan bien
+> ([ADR-0050](docs/adr/0050-descubrimiento-por-alias-y-registro-de-puertos.md)).
+
+Su token, su firewall y su tarea, con la misma forma que los demás. El token es **propio**
+y no el del panel: este servicio crea máquinas y escribe el saldo, así que pesa más.
+
+```powershell
+$infra = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 32 | ForEach-Object {[char]$_})
+[Environment]::SetEnvironmentVariable("JAFNE_INFRA_TOKEN", $infra, "Machine")
+$infra    # anotalo
+
+New-NetFirewallRule -DisplayName "JAFNE infra (ZeroTier)" `
+  -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8732 `
+  -Profile Any -RemoteAddress 10.144.0.0/16
+
+Register-ScheduledTask -TaskName "JAFNE infra" `
+  -Action (New-ScheduledTaskAction -Execute "C:\Repos\jafne\.venv\Scripts\jafne.exe" -Argument "infra --host 10.144.0.1") `
+  -Trigger (New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME) `
+  -Settings (New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)) `
+  -User $env:USERNAME
+```
+
+Va con `-AtLogOn` y no `-AtStartup`: la máquina de Podman corre en **tu** sesión de WSL2, así
+que antes de iniciar sesión no hay motor con el que hablar.
+
+Los dos puntos de entrada del MCP, que son las URLs que JAFNE le pasa a cada agente:
+
+```
+http://10.144.0.1:8732/mcp/asistente          # ve todos los proyectos
+http://10.144.0.1:8732/mcp/proyecto/<id>      # un Encargado: ve solo el suyo
+```
+
+El alcance viaja en **la URL**, no en lo que el agente diga de sí mismo: si fuera un campo
+del mensaje, un Encargado podría declararse Asistente y la jerarquía de ADR-0002 se caería
+con una línea de texto.
+
 ### El nodo de voz, en la máquina con GPU
 
 Esto va **en la otra computadora** (`10.144.0.2`), no en la del panel. Necesita Python
@@ -449,3 +530,7 @@ porque un segundo contra catorce es una diferencia que tiene que verse.
 | `Ya hay un reloj vivo sobre …` | Hay otro reloj corriendo de verdad. El cerrojo lo suelta el sistema operativo al morir el proceso, así que un corte de luz **no** deja esto trabado |
 | El botón de dictado deshabilitado | `GET /api/voz` dice cuál de las tres: falta el motor, el nodo no contesta, o estás entrando por HTTP y el navegador no da micrófono. Lo último se arregla con HTTPS |
 | La tarea programada "corrió" y no pasó nada | Sin consola no ves la salida. `jafne asuntos` muestra lo que el reloj abrió |
+| `jafne saldo` falla al registrar | Infraestructura está apagada, y es **la única** que escribe el saldo (ADR-0042). Levantala con `jafne infra`, o apuntá `$JAFNE_INFRA` a donde corre |
+| `jafne infra` dice que no encuentra Podman | Falta instalarlo, o la máquina está apagada: `podman machine start` |
+| Un contenedor de un proyecto alcanza al de otro | La red se creó antes del 2026-08-19, sin `isolate=true`. `podman network rm jafne-<proyecto>` y se rehace bien (ADR-0050) |
+| El agente dice que no ve los proyectos | Infraestructura no está corriendo, o al agente no se le pasó la URL de su MCP |

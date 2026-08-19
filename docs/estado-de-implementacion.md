@@ -26,6 +26,16 @@ fuentes:
   - docs/adr/0038-tls-del-panel-con-ca-propia.md
   - docs/adr/0039-el-chat-del-panel-usa-herramientas-acotadas-a-la-raiz-de-repos.md
   - docs/adr/0040-identidad-de-rol-en-el-system-prompt.md
+  - docs/adr/0041-el-driver-de-generado-es-krun.md
+  - docs/adr/0042-infraestructura-es-un-proceso-con-el-mcp-adentro.md
+  - docs/adr/0043-los-chats-del-asistente-se-guardan.md
+  - docs/adr/0044-la-cadena-de-delegacion.md
+  - docs/adr/0045-para-que-existen-los-contenedores.md
+  - docs/adr/0046-el-cerebro-corre-afuera-el-contenedor-ejecuta.md
+  - docs/adr/0047-los-contenedores-son-por-repositorio.md
+  - docs/adr/0048-el-repo-declara-su-entorno-de-desarrollo.md
+  - docs/adr/0049-el-encargado-siembra-el-entorno-y-las-skills-de-un-repo.md
+  - docs/adr/0050-descubrimiento-por-alias-y-registro-de-puertos.md
   - src/jafne/pendientes.py
 verificado: 2026-08-19
 ---
@@ -80,8 +90,28 @@ trabajos:
     proyecto: borr
 ```
 
-El saldo de las suscripciones lo escribe Infraestructura (ADR-0025), igual que el estado
-del contenedor. Cada llamada actualiza una ventana y conserva las otras:
+Infraestructura corre aparte (ADR-0042). Es el cuarto proceso, y el que crea Workspaces,
+lleva el saldo y sirve el MCP que consultan el Asistente y los Encargados:
+
+```bash
+jafne infra                                # http://127.0.0.1:8732
+```
+
+Necesita **Podman** para crear Workspaces (ADR-0012). En Windows va sobre WSL2:
+
+```bash
+winget install RedHat.Podman
+podman machine init && podman machine start
+```
+
+Y nada más: desde [ADR-0045](./adr/0045-para-que-existen-los-contenedores.md) JAFNE **no
+elige runtime**, usa el default (`crun`) y entra a los contenedores con `podman exec`. Ya no
+hace falta instalar `krun` ni `libkrun`, que era lo que pedía ADR-0041 cuando el aislamiento
+todavía era el motivo.
+
+El saldo lo escribe **solo Infraestructura** (ADR-0025, ADR-0042): `jafne saldo` es cliente
+suyo y falla diciéndolo si está apagada. Cada llamada actualiza una ventana y conserva las
+otras:
 
 ```bash
 jafne saldo anthropic 5h 0.18 --plan max --fuente "claude-code /usage" \
@@ -134,7 +164,9 @@ Cómo dejar los tres procesos corriendo solos en Windows —tareas programadas, 
 firewall y el acceso al panel desde la malla ZeroTier— está en la sección **Operación** del
 [README](../README.md#operación).
 
-Tests: `.venv/Scripts/python -m pytest` (295 casos, verde al 2026-08-19).
+Tests: `.venv/Scripts/python -m pytest` (386 casos, verde al 2026-08-19). Ninguno toca
+Podman ni la CLI de Claude: los dos se sustituyen, porque la suite tiene que correr en una
+máquina sin motor instalado y sin gastar el saldo del Usuario.
 
 ## Estructura
 
@@ -144,14 +176,18 @@ src/jafne/
   nucleo/
     estados.py         los dos ejes de estado de un Asunto (ADR-0009, ADR-0016)
     tamanos.py         tamaño de cerebro común entre proveedores (ADR-0030)
-    riesgo.py          clase de riesgo y su mapeo a driver (ADR-0027)
     adaptadores.py     qué proveedores se pueden usar hoy (ADR-0028)
     senal_saldo.py     proceder / conmutar / diferir (ADR-0026)
     roles.py           roles y su tamaño por defecto (ADR-0033)
     sesion.py          el contrato neutral de sesión (ADR-0031)
     adaptador_anthropic.py  el contrato sobre la CLI de Claude Code (ADR-0034)
-    prompts/           la identidad de cada rol, un archivo por rol (ADR-0040)
+    prompts/           la identidad de cada rol, uno por rol: los tres (ADR-0040, ADR-0044)
+    mcp.py             cómo se le declara el MCP a cada rol, acotado (ADR-0042)
     credenciales.py    estado de la credencial, sin tocarla (ADR-0034)
+    motor.py           lo único que sabe que Podman existe (ADR-0012, ADR-0041)
+    workspaces.py      el Workspace Broker: el Workspace persiste (ADR-0016, ADR-0042)
+    capacidades.py     lector de `.agents/`: skills y MCP del repo (ADR-0004, ADR-0003)
+    puertos.py         registro de puertos publicados hacia la malla (ADR-0050)
     despertares.py     la cola de despertares, como función del tiempo (ADR-0035)
     transcripcion.py   dictado por voz: local o delegado (ADR-0036, ADR-0037)
     modelos.py         Proyecto, Cerebro, Asunto, Mensaje, Suscripcion, Ventana
@@ -160,6 +196,7 @@ src/jafne/
   panel/
     api.py             FastAPI: JSON, estáticos y token (ADR-0013, ADR-0020)
     web/               index.html + estilo.css + app.js, sin build (ADR-0015)
+  infraestructura.py   el 4º proceso: Workspaces, saldo y servidor MCP (ADR-0042)
   acceso.py            bind, token y TLS, compartidos por panel y nodo (ADR-0020, ADR-0038)
   servicio.py          ciclo de vida común de panel y nodo: log sin ruido inofensivo
   voz.py               el nodo que presta una GPU a la malla (ADR-0037)
@@ -182,14 +219,28 @@ tests/                 estados, catálogos, señal de saldo, almacén, cierre, r
 | Skill de cierre | Las cinco validaciones, en orden, con veredicto y motivo por cada una. Todo-o-nada: si alguna falla, el Asunto vuelve a `interactuando_con_el_usuario` con la causa. Las de git corren `git status` / `merge-base` de verdad. | [ADR-0019](./adr/0019-validaciones-del-cierre-de-asunto.md) |
 | Bitácora durable | El cierre escribe `encargado/bitacora/AAAA-MM-DD-<asunto>.md` en el repo del proyecto, y la validación 3 verifica que quedó. | [ADR-0021](./adr/0021-bitacora-de-cierre-en-el-repo-encargado.md) |
 | Panel: proyectos y Asuntos | Grilla con conteo por estado, vista de proyecto con Asuntos, rama, contenedor, mensajes, motivo y preview. | [ADR-0013](./adr/0013-panel-web-como-dashboard-visual.md) |
+| Por qué un Asunto no avanza | Derivado de los dos ejes al leer, nunca guardado: un Asunto en `iniciando` dice si nunca se le pidió Workspace, si se está creando, si se destruyó, o si falta el primer turno del Encargado. | ADR-0009 + ADR-0016 |
+| Ciclo de vida del Workspace | `lanzar`, `suspender` (`podman pause`), `reanudar` (`unpause`), `registro` (`logs`) y `destruir`. Crear**lo al abrir un Asunto** sigue pendiente: falta la imagen y qué proceso corre adentro. | [ADR-0016](./adr/0016-catalogo-cerrado-estado-contenedor.md) + ADR-0042 |
+| Registro de un contenedor | `GET /api/workspaces/<n>/registro` en Infraestructura; el panel lo pide **por repo** (`?repo=`), porque un Asunto ya no tiene un solo contenedor. | ADR-0042 + ADR-0047 |
+| Identidad de un rol, visible | `GET /api/roles/<rol>/identidad`: el prompt que se le agrega, su punto de entrada MCP y las herramientas que ve, preguntadas en vivo con el acotamiento por URL ya aplicado. | ADR-0040 + ADR-0042 |
+| Capacidades de un repo | Lector de `.agents/skills/*/SKILL.md` y `.mcp.json`, acotado a la raíz de trabajo. Del MCP salen **solo los nombres**, nunca las URLs. No inyecta nada en un Workspace ni crea capacidades. | [ADR-0004](./adr/0004-capacidades-por-repositorio.md) + ADR-0003 |
 | Panel: bind y token | Se niega a escuchar en todas las interfaces, y fuera de loopback exige token (query, cabecera o cookie). | [ADR-0020](./adr/0020-hosting-y-autenticacion-del-panel.md) |
 | Panel: solo lectura del estado | Muestra estado e historial, no los escribe: los escriben el Encargado y el Workspace Broker. | [ADR-0008](./adr/0008-estado-de-asuntos-y-panel-web.md) |
 | Tamaño de cerebro | Catálogo cerrado común a proveedores: `chico`/`medio`/`grande`/`gigante`. El vocabulario que reemplaza (`liviano`/`intermedio`/`pesado`) se traduce al leer para no romper un `~/.jafne/` viejo, y uno fuera del catálogo se rechaza. | [ADR-0030](./adr/0030-tamanos-de-cerebro-catalogo-comun-entre-proveedores.md) |
 | Degradación al conmutar | `degradar()` da el mayor tamaño que cubre el proveedor destino: `gigante` → `grande` al pasar a OpenAI. La consecuencia de ADR-0026 hecha código. | ADR-0030 + ADR-0026 |
 | Señal de saldo | Función pura: entra una `Suscripcion` y un instante, sale `proceder`, `conmutar` o `diferir` con hora de reanudación. Las ventanas no se colapsan: lo que clasifica es el horizonte de reset, no el nombre. | [ADR-0026](./adr/0026-umbral-de-conmutacion-y-diferimiento-por-ventana-corta.md) |
-| Clase de riesgo | Catálogo cerrado de 2 con default `generado`. Sin declarar es el default; mal declarada se rechaza. `revisado` mapea a Podman; `generado` **rechaza** en vez de servirse con menos aislamiento. | [ADR-0027](./adr/0027-clase-de-riesgo-declarada-por-el-encargado.md) |
+| Sin clase de riesgo ni runtime elegido | `riesgo.py` **borrado**. `crear_contenedor()` ya no pasa `--runtime`: se usa el default de Podman, que es donde `podman exec` funciona. `runtimes()` queda solo para informar. | [ADR-0045](./adr/0045-para-que-existen-los-contenedores.md) |
 | Cerebros sin adaptador | Se listan igual, marcados, y usarlos falla con `AdaptadorNoImplementado` — un error propio, distinto de `DecisionPendiente`. | [ADR-0028](./adr/0028-anthropic-primero-alcance-de-adaptadores.md) |
-| Runtime por clase de riesgo | `revisado` → `crun`, `generado` → `kata`. `exigir_runtime()` rechaza si la máquina no lo tiene, en vez de degradar. | [ADR-0032](./adr/0032-driver-de-la-clase-generado.md) |
+| Contenedor por repositorio | `Pedido` lleva proyecto, Asunto y repo; el contenedor se llama `jafne-<proyecto>-<asunto>-<repo>`. El Asunto no tiene contenedor propio. | [ADR-0047](./adr/0047-los-contenedores-son-por-repositorio.md) |
+| Entrar al contenedor | `Broker.ejecutar()` sobre `podman exec`. Reemplazó al par `esperar`/`correr`: con un contenedor que persiste, esperar a que termine es esperar para siempre. | ADR-0045 |
+| Imagen del repo | `Broker.construir()` corre `podman build` con el `Dockerfile.dev` del repo. Sin ese archivo devuelve `None` y se cae a la imagen por defecto, que hoy es el caso de todos los repos. | [ADR-0048](./adr/0048-el-repo-declara-su-entorno-de-desarrollo.md) |
+| Disparador de la delegación | `Broker.delegar()` construye y lanza en un paso, y monta el repo en `/repos/<repo>`. Expuesto como `POST /api/workspaces` y como la herramienta MCP `agente_delegar` del Encargado. El repo se valida contra la raíz de trabajo antes de montarlo. | [ADR-0047](./adr/0047-los-contenedores-son-por-repositorio.md) + ADR-0039 |
+| Identidad del Agente | `nucleo/prompts/agente.md`: alcance de un repositorio, trabaja en su contenedor, y **pide al Encargado que rearme** en vez de instalar a mano. Tiene prompt pero **no** MCP: son cosas separadas. | ADR-0040 + ADR-0044 + [ADR-0049](./adr/0049-el-encargado-siembra-el-entorno-y-las-skills-de-un-repo.md) |
+| Aislamiento real entre proyectos | La red se crea con `--opt isolate=true`. Sin eso, verificado el 2026-08-19, el bff de un proyecto pinguea el back de otro con 0% de pérdida — la garantía de ADR-0011 era falsa. | [ADR-0050](./adr/0050-descubrimiento-por-alias-y-registro-de-puertos.md) |
+| Descubrimiento por alias | El contenedor entra a la red con `alias=<repo>`, así que el bff llama a `back` y funciona en cualquier proyecto. | ADR-0050 |
+| Registro de puertos | `nucleo/puertos.py`: primer libre del rango 9000-9999, idempotente por (contenedor, puerto interno), liberado al destruir, persistido en `~/.jafne/puertos.json`. | ADR-0050 |
+| Keep-alive impuesto | El contenedor corre `sleep infinity` y no el `CMD` del repo, para que un servicio que crashea no se lleve puesto el lugar de trabajo del Agente. | ADR-0048 |
+| Resumen de contenedores | `resumir_contenedores()` deriva el `estado_contenedor` del Asunto de los de sus Agentes: `activo` gana sobre `suspendido`, y sin Agentes es `None`. | ADR-0047 + ADR-0016 |
 | Contrato de sesión | `Protocol` con las cuatro operaciones. Verificable sin implementación: un adaptador lo cumple sin heredar del núcleo, que es lo que permite congelarlo antes que el primer adaptador. | [ADR-0031](./adr/0031-contrato-de-sesion-reanudable.md) |
 | Cerebro por rol | Catálogo cerrado de roles y resolución **derivada** de `cerebros.yaml`: el Asistente sale en `medio` y salta a otro cerebro si cambia el archivo. Un rol sin default devuelve `None`, que es la decisión de ADR-0003, no un hueco. | [ADR-0033](./adr/0033-tamano-por-defecto-del-rol-asistente.md) |
 | Sobre qué modelo corre cada rol | `GET /api/roles`, la tarjeta del panel y `jafne cerebros`. Lo consulta el Usuario y **el propio agente**. | ADR-0033 |
@@ -208,6 +259,16 @@ tests/                 estados, catálogos, señal de saldo, almacén, cierre, r
 | Chat del panel con el Asistente | Conversa de verdad, con memoria entre turnos: el segundo turno reanuda la sesión del proveedor en vez de reinyectar el historial. La sesión vive en memoria del proceso —el panel no escribe estado—. | [ADR-0013](./adr/0013-panel-web-como-dashboard-visual.md) + ADR-0031 |
 | Chat con herramientas acotadas | El agente trabaja dentro de `C:/Repos` (`--add-dir` + `acceptEdits`); afuera el proveedor deniega y el turno termina pidiendo permiso. Verificado contra la CLI real: adentro escribe y lee, afuera no filtró el contenido. | [ADR-0039](./adr/0039-el-chat-del-panel-usa-herramientas-acotadas-a-la-raiz-de-repos.md) |
 | Identidad del Asistente | `--append-system-prompt-file` con el texto de `nucleo/prompts/asistente.md`: rol, jerarquía, borde y que las decisiones son del Usuario. Verificado contra la CLI real: preguntado quién es, contesta las cuatro cosas sin que el mensaje se las diga. | [ADR-0040](./adr/0040-identidad-de-rol-en-el-system-prompt.md) |
+| Identidad del Encargado | `nucleo/prompts/encargado.md`: alcance de **organización** —no de repositorio—, que delega un Agente por repo, y que escala al Asistente en vez de decidir. | [ADR-0044](./adr/0044-la-cadena-de-delegacion.md) |
+| Chat del Encargado | Dejó de responder 501: conversa en `grande`, que es lo que el Usuario fijó. La entrada `cerebro-del-encargado-conversando` salió de `pendientes.py` en el mismo commit. | ADR-0044 + ADR-0033 |
+| Chats guardados | `~/.jafne/chats/<id>/` con `meta.yaml` + `historial.jsonl`, la misma forma que un Asunto. Guarda el id de sesión **y** el transcript; nuevo por defecto, los viejos se listan, se retoman por id y se borran a mano. El título sale del primer mensaje. | [ADR-0043](./adr/0043-los-chats-del-asistente-se-guardan.md) |
+| El motor de contenedores | `nucleo/motor.py`: encuentra Podman, dice si está encendido y qué runtimes tiene. Sabe que en Windows el cliente es **remoto** y que `--runtime` no viaja por ahí, así que lo que necesita elegir runtime va por `podman machine ssh`. | ADR-0012 + [ADR-0041](./adr/0041-el-driver-de-generado-es-krun.md) |
+| Workspace Broker | Construye, lanza, suspende, reanuda, ejecuta y destruye. Crea la red por proyecto con `isolate=true` y le pone al contenedor el alias de su repo. Verificado contra Podman real el 2026-08-19: `pause`/`unpause` y el montaje desde `/mnt/c` funcionan. | [ADR-0042](./adr/0042-infraestructura-es-un-proceso-con-el-mcp-adentro.md) + [ADR-0050](./adr/0050-descubrimiento-por-alias-y-registro-de-puertos.md) |
+| Infraestructura | `jafne infra`, el cuarto proceso. Sirve el estado del motor, los Workspaces vivos y el saldo, con ADR-0020 completo por `acceso.py`. | ADR-0042 |
+| Servidor MCP | JSON-RPC sobre HTTP, sin SDK: `initialize`, `ping`, `tools/list` y `tools/call`. Seis herramientas — proyectos, Asuntos, detalle, abrir Asunto, saldo y estado del motor. Un fallo de herramienta vuelve como resultado con `isError`, no como error de protocolo, para que el agente pueda leerlo. | ADR-0042 + [ADR-0004](./adr/0004-capacidades-por-repositorio.md) |
+| Alcance por rol del MCP | El Asistente entra por `/mcp/asistente` y ve todo; un Encargado por `/mcp/proyecto/<id>` y ve el suyo. Un argumento `proyecto` de un Encargado se **ignora**, y sus herramientas ni siquiera lo listan. | ADR-0042 + ADR-0002 |
+| El MCP declarado al agente | `nucleo/mcp.py` arma la config y el adaptador la pasa inline con `--mcp-config`, más `--allowed-tools mcp__jafne`. La URL —y con ella el alcance— la arma JAFNE a partir del rol y del proyecto, nunca el agente. El token va en la cabecera, no en la URL, que se ve en un listado de procesos. Verificado contra la CLI real: el Asistente lista los proyectos, y un Encargado que intenta pasar otro proyecto por argumento no puede. | ADR-0042 + ADR-0044 |
+| El saldo lo escribe Infraestructura | `POST /api/saldo` es el único escritor; `jafne saldo` es cliente. Apagada, la CLI falla diciendo cómo levantarla en vez de escribir el archivo por atrás. | ADR-0042 + ADR-0025 |
 | `saldo()` del adaptador | Devuelve `None` a propósito: la CLI informa **gasto** del turno y ADR-0025 fijó que la métrica es el **saldo**. Inventar uno desde el otro sería resolver `medicion-de-consumo` por la puerta de atrás. | ADR-0025 + ADR-0031 |
 | Voz: delegar en un nodo | `$JAFNE_VOZ_NODO` manda el audio a otra máquina de la malla; sin declararlo se transcribe acá. El panel muestra en cuál se transcribió. | [ADR-0037](./adr/0037-el-dictado-puede-delegarse-a-un-nodo-con-gpu.md) |
 | Voz: el nodo | `jafne voz` levanta dos endpoints y nada más: no lee `~/.jafne/` y no puede escribir estado. Un nodo con `$JAFNE_VOZ_NODO` puesto transcribe igual, no se reenvía a sí mismo. | ADR-0037 |
@@ -216,7 +277,7 @@ tests/                 estados, catálogos, señal de saldo, almacén, cierre, r
 | TLS del panel y del nodo | `--cert`/`--clave` (o sus variables) hacen que uvicorn sirva HTTPS. Se exigen los dos o ninguno, y se comprueba que los archivos existan **antes** de escuchar. | [ADR-0038](./adr/0038-tls-del-panel-con-ca-propia.md) |
 | Aviso al servir sin TLS | Fuera de loopback avisa que el navegador no va a dar micrófono, aclarando que el tráfico igual va cifrado por la malla. No se rechaza: mirar el dashboard sin TLS es legítimo. | ADR-0038 + ADR-0011 |
 | Bind y token compartidos | La comprobación de ADR-0020 es una sola función para el panel y para el nodo: dos servicios con reglas de acceso copiadas terminan con reglas distintas. | ADR-0020 + ADR-0037 |
-| CLI | `init`, `proyectos`, `asuntos`, `abrir`, `estado`, `contenedor`, `pregunta`, `anotar`, `historial`, `reabrir`, `cerrar`, `saldo`, `cerebros`, `credencial`, `pendientes`, `panel`, `reloj`, `voz`. Fuerza UTF-8 en la salida: la consola de Windows es cp1252 y `jafne pendientes` moría con el `→` del hop 4. | ADR-0007/0009/0013/0016-0021/0025-0035 |
+| CLI | `init`, `proyectos`, `asuntos`, `abrir`, `estado`, `contenedor`, `pregunta`, `anotar`, `historial`, `reabrir`, `cerrar`, `saldo`, `cerebros`, `credencial`, `pendientes`, `panel`, `reloj`, `voz`, `infra`. Fuerza UTF-8 en la salida: la consola de Windows es cp1252 y `jafne pendientes` moría con el `→` del hop 4. | ADR-0007/0009/0013/0016-0021/0025-0035/0042 |
 
 ## No implementado, y por qué
 
@@ -230,10 +291,8 @@ registró y dice, al lado, que medirlo solo todavía no está decidido.
 |---|---|---|
 | `medicion-de-consumo` | **Cómo** observa Infraestructura el consumo. El saldo se sirve, pero se carga a mano: falta si las llamadas pasan por un punto que mide o si cada agente reporta lo suyo. | ADR-0025 + [medicion-de-consumo](../investigacion/medicion-de-consumo/research.md) |
 | `historial-desbordado` | Qué hacer si el historial de un Asunto reabierto no entra en la ventana de contexto. | ADR-0018 |
-| `workspace-broker` | **Descubrimiento de servicios del proyecto** — base de datos, colas, otros repos— con la red restringida de ADR-0011. Crear Workspaces ya no está bloqueado por una decisión: ADR-0027 fijó quién declara el aislamiento y ADR-0032 a qué runtime mapea. | [ADR-0011](./adr/0011-redes-y-puertos-de-workspace.md) |
+| `workspace-broker` | **Descubrimiento de servicios que no son repos** —base de datos, colas— y por lo tanto no tienen alias de red. Los repos del proyecto ya se resuelven por alias (ADR-0050), y crear contenedores tampoco está bloqueado: el disparador corre. | [ADR-0011](./adr/0011-redes-y-puertos-de-workspace.md) + [ADR-0050](./adr/0050-descubrimiento-por-alias-y-registro-de-puertos.md) |
 | `sprints` | El modelo está decidido (ejes independientes, estado afuera); falta **cuál** herramienta y qué vocabulario mínimo sirve para hablarle a cualquiera. Sin eso no hay contrato MCP que programar. | [ADR-0023](./adr/0023-sprints-ejes-independientes-y-estado-externo.md) + [ADR-0014](./adr/0014-gestion-de-sprints-via-mcp.md) |
-| `protocolo-asignacion-tareas` | El mensaje Encargado → Agente (hop 4). No bloquea al panel: se puede decidir aparte. | [protocolo-de-asignacion-de-tareas](../investigacion/protocolo-de-asignacion-de-tareas/research.md) |
-| `cerebro-del-encargado-conversando` | Con qué cerebro conversa un Encargado que todavía no tiene tarea. ADR-0033 no le dio default —lo elige por tarea— y una conversación no es una tarea. Apareció al escribir el adaptador. | ADR-0033 + ADR-0003 |
 | `rotacion-de-token` | Cada cuánto rota el token, quién lo rota y qué hacer si se filtra. Ahora son **dos** tokens, uno por servicio. El TLS ya se decidió (ADR-0038). | ADR-0020 + ADR-0038 |
 | `sincronia-entre-maquinas` | Qué pasa si el Usuario opera JAFNE desde dos máquinas con estado operativo distinto. | ADR-0021 |
 
@@ -251,8 +310,7 @@ que vuelve útil a ese registro.
 | La skill de un trabajo programado | ADR-0024 + ADR-0035 | El reloj abre el Asunto y anota qué skill hay que correr; correrla es el adaptador otra vez. Hasta entonces el Asunto queda en `iniciando` con el pedido visible, que es lo honesto: el trabajo programado dispara de verdad, y lo que no pasa se ve. |
 | `session_id` del proveedor en `meta.yaml` | ADR-0031 | El adaptador ya lo produce, pero quien lo escribiría es el Encargado trabajando un Asunto, y ese camino no existe todavía. El chat del panel **no** puede persistirlo: escribiría estado (ADR-0035). Se agrega cuando haya quien lo escriba. |
 | Retomar el trabajo diferido por cupo | ADR-0026 + ADR-0035 | **Quien despierta ya existe**: el reloj encola el reset de `saldo.yaml` y llega a horario. Lo que falta es retomar el Asunto cuando llega, que es el adaptador. El disparo lo informa en vez de aparentar que corrió, y la hora sigue siendo correcta sobre un dato que hoy se carga a mano. |
-| Servidor MCP de JAFNE | ADR-0004 + ADR-0014 + ADR-0040 | El Usuario eligió MCP como la forma de darle al agente el estado de los proyectos y la delegación a un Encargado. Lo que expondría ya existe y hoy solo se ve por HTTP: proyectos, Asuntos y saldo. Hasta que exista, el prompt del Asistente **declara** que no lo tiene, para que conteste que no sabe en vez de salir a mirar el disco. |
-| Identidad del Encargado y del Agente | ADR-0040 | El patrón está escrito y el del Asistente corre; faltan `encargado.md` y `agente.md`. El del Encargado no tiene dónde estrenarse todavía: su chat responde 501 por `cerebro-del-encargado-conversando`. |
+| Generar un proyecto | ADR-0044 | Está decidido qué es: entrada en `proyectos.yaml`, uno o más repos, scaffold y `engineering.yaml` con sus capacidades (ADR-0004). Falta escribirlo, y depende de qué scaffolds existan. |
 
 ## Detalles de implementación que ningún ADR fija
 

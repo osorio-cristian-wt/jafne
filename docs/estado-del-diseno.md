@@ -24,6 +24,13 @@ Misma relación que un Asunto tiene entre su `historial.jsonl` y su `meta.yaml`.
 |---|---|---|
 | Jerarquía | Usuario → Asistente → Encargado → Agentes, con escalación por la cadena | [ADR-0002](./adr/0002-jerarquia-de-roles-escalacion-y-modos-de-comunicacion.md) |
 | Modos de comunicación | Directo (attached) y delegado (con resumen) | ADR-0002 |
+| Qué es un proyecto | Una **organización**, con uno o varios repos adentro | [ADR-0044](./adr/0044-la-cadena-de-delegacion.md) |
+| Alcance del Encargado | La organización: qué repos hay, arquitectura general y requisitos | ADR-0044 |
+| Alcance del Agente | **Un** repositorio: su implementación, sus skills y su MCP | ADR-0044 + [ADR-0004](./adr/0004-capacidades-por-repositorio.md) |
+| Trabajo que cruza repos | **Un Agente por repo**, cada uno en su contenedor. El Encargado orquesta, no baja | ADR-0044 + ADR-0047 |
+| Si al Agente le falta algo | **Le pide al Encargado que rearme** el contenedor; nunca instala a mano, que se perdería en el próximo build | ADR-0002 + ADR-0048 |
+| Cómo se delega | **Abriendo un Asunto**. Nada de trabajo queda fuera del sistema | ADR-0044 + ADR-0006 |
+| Cuándo delega solo el Asistente | Si el Asunto **ya existe**. Abrir uno nuevo se propone y se espera | ADR-0044 |
 | Unidad de trabajo | El **Asunto**: persistente, del Encargado, con ciclo de vida propio | [ADR-0006](./adr/0006-asuntos-unidad-de-trabajo-y-ciclo-de-vida.md) |
 | Quién abre un Asunto | El Usuario, **o el reloj** por cadencia declarada | ADR-0006 + [ADR-0024](./adr/0024-trabajo-programado-asuntos-disparados-por-tiempo.md) |
 | Capacidades de un repo | Skills + MCP por repositorio, con aprobación del Usuario | [ADR-0004](./adr/0004-capacidades-por-repositorio.md) |
@@ -34,7 +41,7 @@ Misma relación que un Asunto tiene entre su `historial.jsonl` y su `meta.yaml`.
 |---|---|---|
 | Ejes de estado | Dos, **independientes**: `estado_asunto` y `estado_contenedor` | [ADR-0008](./adr/0008-estado-de-asuntos-y-panel-web.md) |
 | `estado_asunto` | Catálogo cerrado de 5, lo escribe el Encargado | [ADR-0009](./adr/0009-catalogo-cerrado-estado-asunto.md) |
-| `estado_contenedor` | Catálogo cerrado de 4, lo escribe el Workspace Broker. Su ausencia ≠ `destruido` | [ADR-0016](./adr/0016-catalogo-cerrado-estado-contenedor.md) |
+| `estado_contenedor` | Catálogo cerrado de 4. En el Asunto es **derivado**: resumen de los contenedores de sus Agentes. Su ausencia ≠ `destruido` | [ADR-0016](./adr/0016-catalogo-cerrado-estado-contenedor.md) + ADR-0047 |
 | Timeout de 3 min | **Derivado al leer**, nunca persistido, y solo si `pregunta_pendiente` | [ADR-0017](./adr/0017-timeout-derivado-y-pregunta-pendiente.md) |
 | Reapertura | Vuelven historial y contexto; el contenedor **no** | [ADR-0018](./adr/0018-reapertura-de-asuntos.md) |
 | Cierre | 5 validaciones, catálogo cerrado, todo-o-nada | [ADR-0019](./adr/0019-validaciones-del-cierre-de-asunto.md) |
@@ -52,7 +59,8 @@ Misma relación que un Asunto tiene entre su `historial.jsonl` y su `meta.yaml`.
 | Tamaño | Catálogo cerrado común: `chico` / `medio` / `grande` / `gigante` | [ADR-0030](./adr/0030-tamanos-de-cerebro-catalogo-comun-entre-proveedores.md) |
 | Correspondencia | chico=Haiku/Luna · medio=Sonnet/Tierra · grande=Opus/Sol · gigante=Fable | ADR-0030 |
 | Tamaño del Asistente | `medio`. Conversa, enruta y delega; el trabajo difícil va abajo | [ADR-0033](./adr/0033-tamano-por-defecto-del-rol-asistente.md) |
-| Tamaño de Encargado y Agente | Sin default: lo elige el Encargado **por tarea** | ADR-0003 + ADR-0033 |
+| Tamaño del Encargado | `grande` para **conversar**: su trabajo es arquitectura y organización | [ADR-0044](./adr/0044-la-cadena-de-delegacion.md) |
+| Tamaño del Agente | Sin default: lo elige el Encargado **por tarea**, y siempre hay tarea | ADR-0003 + ADR-0044 |
 | Roles con cerebro | Catálogo cerrado: `asistente`, `encargado`, `agente`. El Usuario no está | ADR-0002 + ADR-0033 |
 | Facturación | **Suscripciones personales**, no organización | [ADR-0025](./adr/0025-presupuesto-por-proveedor-y-conmutacion-por-saldo.md) |
 | Métrica | **Saldo** (cuánto queda), no gasto. La lleva Infraestructura | ADR-0025 |
@@ -70,25 +78,41 @@ Misma relación que un Asunto tiene entre su `historial.jsonl` y su `meta.yaml`.
 |---|---|---|
 | Quién los crea | El Workspace Broker. Los Agentes **nunca** hablan con el motor | [ADR-0012](./adr/0012-motor-de-contenedores-podman.md) |
 | Motor por defecto | Podman | ADR-0012 |
-| Red | Aislada por proyecto; exposición solo vía ZeroTier | [ADR-0011](./adr/0011-redes-y-puertos-de-workspace.md) |
-| Aislamiento | El Encargado declara clase de riesgo; Infraestructura mapea a driver | [ADR-0027](./adr/0027-clase-de-riesgo-declarada-por-el-encargado.md) |
-| Runtime por clase | `revisado` → `crun`; `generado` → `kata` (microVM). Dos runtimes del **mismo** Podman | [ADR-0032](./adr/0032-driver-de-la-clase-generado.md) |
-| Si falta el runtime | Se **rechaza** el Workspace. Nunca se degrada en silencio | ADR-0032 |
-| Clases de riesgo | Catálogo cerrado de 2: `revisado` / `generado`. **Default `generado`** | ADR-0027 |
-| Dónde viaja el riesgo | En el pedido de Workspace — es propiedad de la tarea, no del repo | ADR-0027 |
+| Red | Aislada por proyecto con **`isolate=true`**; sin esa opción dos redes se alcanzan por IP | [ADR-0011](./adr/0011-redes-y-puertos-de-workspace.md) + [ADR-0050](./adr/0050-descubrimiento-por-alias-y-registro-de-puertos.md) |
+| Cómo se encuentran los servicios | Por **alias de red** = nombre del repo. Dos proyectos pueden tener los dos un `back` sin chocarse | ADR-0050 |
+| Puertos hacia la malla | Registro **programado** en Infraestructura, rango 9000-9999, idempotente y liberado al destruir | ADR-0050 |
+| Para qué existen | Dormir/despertar para ahorrar recursos, y **portabilidad**. El aislamiento es consecuencia, no motivo | [ADR-0045](./adr/0045-para-que-existen-los-contenedores.md) |
+| Quién tiene contenedor | **Uno por repositorio**, creado al delegar un Agente. El Asunto **no tiene** | [ADR-0047](./adr/0047-los-contenedores-son-por-repositorio.md) |
+| Dónde corre el Encargado | En el host, acotado a la raíz de repos. No tiene contenedor propio | ADR-0047 + ADR-0039 |
+| Runtime | El **default** de Podman. JAFNE ya **no elige** runtime ni declara clase de riesgo | ADR-0045 |
+| Cómo se entra | Con **`podman exec`**. Un keep-alive que impone JAFNE mantiene el contenedor en pie | ADR-0045 + [ADR-0048](./adr/0048-el-repo-declara-su-entorno-de-desarrollo.md) |
+| Dónde corre el modelo | **Afuera** del contenedor. La credencial nunca entra | [ADR-0046](./adr/0046-el-cerebro-corre-afuera-el-contenedor-ejecuta.md) |
+| Qué imagen usa | La que el repo declara en su **`Dockerfile.dev`**; JAFNE la construye y la cachea | ADR-0048 |
+| Si el repo no la declara | El **Encargado la siembra** al delegar por primera vez, junto con las skills del Agente, y **sin escalar** | [ADR-0049](./adr/0049-el-encargado-siembra-el-entorno-y-las-skills-de-un-repo.md) |
+| Ciclo de vida | `creando → activo → suspendido ↔ activo → destruido` | [ADR-0016](./adr/0016-catalogo-cerrado-estado-contenedor.md) |
+| Nombre del contenedor | `jafne-<proyecto>-<asunto>-<repo>`, derivado y no aleatorio | ADR-0047 |
 
 ## Panel y procesos
 
 | Tema | Hoy | Fija |
 |---|---|---|
 | Qué es | Dashboard visual: proyectos, Asuntos, chat y uso de suscripciones | [ADR-0013](./adr/0013-panel-web-como-dashboard-visual.md) |
-| Sobre el estado | Solo lectura, **sin excepciones**: lo muestra, no lo escribe | ADR-0008 + ADR-0013 + [ADR-0035](./adr/0035-el-reloj-corre-en-su-propio-proceso.md) |
+| Sobre el estado | No escribe estado **de Asuntos**. Sí escribe sus chats, y nada más | ADR-0008 + [ADR-0043](./adr/0043-los-chats-del-asistente-se-guardan.md) |
+| Chats del Asistente | Se guardan en `~/.jafne/chats/`: id de sesión **e** transcript | ADR-0043 |
+| Chat nuevo o viejo | **Nuevo por defecto**; los viejos se listan y se retoman por id | ADR-0043 + [ADR-0031](./adr/0031-contrato-de-sesion-reanudable.md) |
+| Caducidad de un chat | **Ninguna.** Los borra el Usuario cuando quiere | ADR-0043 |
+| Chats del Encargado | **No se guardan**: ese trabajo es un Asunto | ADR-0043 + ADR-0006 |
+| Cuántos procesos | Cuatro: panel, reloj, nodo de voz e **Infraestructura** | [ADR-0042](./adr/0042-infraestructura-es-un-proceso-con-el-mcp-adentro.md) + ADR-0035 |
+| Qué hace Infraestructura | Workspaces, el saldo y el servidor MCP. Todo lo que sobrevive a un turno | ADR-0042 |
+| Quién escribe el saldo | **Solo Infraestructura.** `jafne saldo` es cliente suyo y falla si está apagada | ADR-0042 + ADR-0025 |
+| Alcance del MCP | Viaja en la **URL**, no en lo que el agente dice de sí mismo | ADR-0042 |
+| Qué ve cada rol por MCP | El Asistente, todos los proyectos; un Encargado, **solo el suyo** | ADR-0042 + ADR-0002 |
 | Chat del panel | Habla con el agente **con herramientas**: el dashboard existe para eso | [ADR-0039](./adr/0039-el-chat-del-panel-usa-herramientas-acotadas-a-la-raiz-de-repos.md) |
 | Hasta dónde llega el agente | La raíz de repos del Usuario (`C:/Repos`). Afuera se deniega, y el turno termina | ADR-0039 |
 | Permisos | `acceptEdits` dentro de la raíz. **Nunca** `bypassPermissions` | ADR-0039 |
 | Identidad del agente | Se **agrega** al system prompt del proveedor, nunca lo reemplaza | [ADR-0040](./adr/0040-identidad-de-rol-en-el-system-prompt.md) |
-| Dónde vive el texto | Versionado en el repo, un archivo **por rol**. Hoy solo el del Asistente | ADR-0040 |
-| Estado de los proyectos | El agente lo **consulta por MCP**, no se le inyecta. Hasta que exista, el prompt declara que no lo tiene | ADR-0040 + [ADR-0004](./adr/0004-capacidades-por-repositorio.md) |
+| Dónde vive el texto | Versionado en el repo, un archivo **por rol**. Hay Asistente y Encargado | ADR-0040 + ADR-0044 |
+| Estado de los proyectos | El agente lo **consulta por MCP**, no se le inyecta | ADR-0040 + [ADR-0042](./adr/0042-infraestructura-es-un-proceso-con-el-mcp-adentro.md) |
 | Hosting | Nunca en todas las interfaces; fuera de loopback exige token | [ADR-0020](./adr/0020-hosting-y-autenticacion-del-panel.md) |
 | TLS | **Opcional**, con CA propia (mkcert). Sin él se sirve HTTP y se avisa | [ADR-0038](./adr/0038-tls-del-panel-con-ca-propia.md) |
 | Para qué el TLS | Para **desbloquear el micrófono** del navegador, no por confidencialidad: la malla ya cifra | ADR-0038 + ADR-0011 |

@@ -1,72 +1,15 @@
 """Los catálogos que no son ejes de estado de un Asunto.
 
-- `riesgo` — clase de riesgo declarada por el Encargado (ADR-0027).
 - `tamanos` — tamaño de cerebro común entre proveedores (ADR-0030).
 - `adaptadores` — qué proveedores se pueden usar hoy (ADR-0028).
 """
 
 import pytest
 
-from jafne.nucleo import riesgo, tamanos
+from jafne.nucleo import tamanos
 from jafne.nucleo.adaptadores import AdaptadorNoImplementado, exigir, hay_adaptador
-from jafne.nucleo.riesgo import ClaseRiesgo, ClaseRiesgoInvalida
 from jafne.nucleo.tamanos import ORDEN, Tamano, TamanoInvalido
 from jafne.pendientes import DecisionPendiente
-
-# ── clase de riesgo (ADR-0027) ───────────────────────────────────────────────
-
-
-def test_sin_clase_declarada_se_asume_la_mas_estricta():
-    # "Aislar de más antes que arriesgar un escape": el análogo de la política de
-    # ADR-0003 aplicado a infraestructura.
-    assert riesgo.parsear(None) is ClaseRiesgo.GENERADO
-    assert riesgo.parsear("") is ClaseRiesgo.GENERADO
-    assert riesgo.POR_DEFECTO is ClaseRiesgo.GENERADO
-
-
-def test_una_clase_declarada_se_respeta():
-    assert riesgo.parsear("revisado") is ClaseRiesgo.REVISADO
-    assert riesgo.parsear("  GENERADO  ") is ClaseRiesgo.GENERADO
-
-
-def test_una_clase_que_no_existe_no_se_adivina():
-    # Omitirla es aceptar el default; escribirla mal es querer decir algo y errarle.
-    # Adivinar ahí sería elegir el aislamiento por el Encargado.
-    with pytest.raises(ClaseRiesgoInvalida):
-        riesgo.parsear("microvm")
-
-
-def test_el_catalogo_de_riesgo_tiene_dos_valores():
-    assert {c.value for c in ClaseRiesgo} == {"revisado", "generado"}
-
-
-def test_cada_clase_tiene_su_runtime():
-    # No son dos motores: son dos runtimes del mismo Podman (ADR-0032).
-    assert riesgo.driver_para(ClaseRiesgo.REVISADO) == "crun"
-    assert riesgo.driver_para(ClaseRiesgo.GENERADO) == "kata"
-
-
-def test_el_default_pide_el_aislamiento_fuerte():
-    # `generado` es el default, así que el camino normal es el de microVM.
-    assert riesgo.driver_para(riesgo.POR_DEFECTO) == "kata"
-
-
-def test_con_el_runtime_disponible_se_sirve():
-    assert riesgo.exigir_runtime(ClaseRiesgo.GENERADO, {"crun", "kata"}) == "kata"
-
-
-def test_sin_el_runtime_se_rechaza_en_vez_de_degradar():
-    # ADR-0032: servir `generado` sobre `crun` le daría al Encargado una garantía que no
-    # tiene. Fallar ruidoso es el comportamiento correcto acá.
-    with pytest.raises(riesgo.RuntimeNoDisponible) as excepcion:
-        riesgo.exigir_runtime(ClaseRiesgo.GENERADO, {"crun"})
-    assert excepcion.value.driver == "kata"
-    assert "menos aislamiento" in str(excepcion.value)
-
-
-def test_la_clase_revisada_no_necesita_microvm():
-    assert riesgo.exigir_runtime(ClaseRiesgo.REVISADO, {"crun"}) == "crun"
-
 
 # ── tamaño de cerebro (ADR-0030) ─────────────────────────────────────────────
 
@@ -158,4 +101,4 @@ def test_los_pendientes_se_imprimen_sin_romper_en_consolas_no_utf8(capsys, monke
     )
     assert main(["pendientes"]) == 0
     sys.stdout.flush()
-    assert "protocolo-asignacion-tareas" in crudo.getvalue().decode("utf-8")
+    assert "workspace-broker" in crudo.getvalue().decode("utf-8")

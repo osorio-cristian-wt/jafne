@@ -25,6 +25,18 @@ llevaba dos preguntas pegadas y ADR-0038 contestó una sola —el TLS—, así q
 renombró a `rotacion-de-token` en vez de borrarse. Contestar la mitad y tachar el todo es
 la forma más rápida de que este registro deje de servir.
 
+También el 2026-08-19 salió `protocolo-asignacion-tareas`, y por un camino que vale anotar:
+no se contestó, **se disolvió**. ADR-0046 sacó el cerebro afuera del contenedor y ADR-0045
+devolvió `podman exec` al dejar de elegir runtime, así que la pregunta —¿A2A, CrewAI,
+MCP-handoff?— se quedó sin objeto: no hay mensaje que formatear entre dos procesos, hay un
+comando que se ejecuta adentro. Una decisión de arriba puede evaporar una pregunta de
+abajo, y eso también es cerrarla.
+
+Ese mismo día salió entera `cerebro-del-encargado-conversando`: el Usuario dijo que el
+Encargado conversa en modelo `grande` (ADR-0044), que era exactamente la pregunta. Salió
+sin dejar residuo porque no había media pregunta escondida adentro — la entrada preguntaba
+una sola cosa.
+
 **Esto no registra trabajo pendiente, sino decisiones pendientes.** Un adaptador decidido
 y todavía no escrito no va acá: va con su propia señal (`nucleo/adaptadores.py`, ADR-0028),
 porque si las dos cosas se mezclan la pregunta *"¿qué falta decidir?"* deja de tener una
@@ -95,10 +107,14 @@ _REGISTRO: tuple[Pendiente, ...] = (
             "Lo que quedaba del Broker se fue cerrando: ADR-0027 fijó quién declara el "
             "aislamiento y ADR-0032 a qué runtime mapea cada clase. Queda cómo un "
             "Workspace descubre los servicios del proyecto —base de datos, colas, otros "
-            "repos— con la red restringida por proyecto de ADR-0011: si se declaran en "
-            "`engineering.yaml`, si los inyecta el Broker, o si se resuelven por nombre "
-            "dentro de la red del proyecto. Crear Workspaces de verdad ya no está "
-            "bloqueado por una decisión: es trabajo."
+            "repos— que **no** son repos del proyecto y por lo tanto no tienen alias de red. "
+            "Los que sí lo son ya está resuelto: se encuentran por alias, que es el nombre "
+            "del repo (ADR-0050). Y cruza con ADR-0004: las skills del repo "
+            "viven en `.agents/`, pero cómo entran al Workspace —montadas, copiadas o "
+            "resueltas por red— es parte de esta misma pregunta.\n"
+            "Crear contenedores ya **no** está bloqueado: ADR-0047 los ató a la delegación "
+            "y ADR-0048 sacó la imagen del repo, así que el disparador existe y corre "
+            "(`agente_delegar`)."
         ),
     ),
     Pendiente(
@@ -113,29 +129,6 @@ _REGISTRO: tuple[Pendiente, ...] = (
             "Linear tiene *cycles*, y el desajuste es conceptual, no de nombre. También "
             "falta si habla el Encargado desde su Workspace, con la red restringida por "
             "ADR-0011, o el Asistente desde afuera."
-        ),
-    ),
-    Pendiente(
-        clave="protocolo-asignacion-tareas",
-        titulo="Protocolo de asignación de tareas Encargado → Agente",
-        bloqueado_por="investigacion/protocolo-de-asignacion-de-tareas",
-        pregunta=(
-            "¿Task de A2A, patrón tipo CrewAI, o MCP-handoff? Es el hop 4 y se puede "
-            "decidir aparte de los hops conversacionales: no bloquea al panel."
-        ),
-    ),
-    Pendiente(
-        clave="cerebro-del-encargado-conversando",
-        titulo="Con qué cerebro conversa un Encargado que todavía no tiene tarea",
-        bloqueado_por="ADR-0033 + ADR-0003",
-        pregunta=(
-            "ADR-0033 fijó que el Asistente corre en `medio` y que Encargado y Agente no "
-            "tienen tamaño por defecto: los elige el Encargado **por tarea**. El chat del "
-            "panel con un Encargado (ADR-0013) rompe ese supuesto — es una conversación "
-            "sin tarea todavía, así que no hay nada de donde derivar el tamaño. ¿Conversa "
-            "en `medio` como el Asistente hasta que haya trabajo, se declara un default "
-            "aparte en `cerebros.yaml`, o el chat obliga a abrir un Asunto primero? Se "
-            "encontró al escribir el adaptador, no antes: el contrato no lo pedía."
         ),
     ),
     Pendiente(

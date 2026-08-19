@@ -171,7 +171,8 @@ function tarjetaRoles(roles) {
       ]);
     }
     return el("div", { clase: "suscripcion-cab", title: r.descripcion }, [
-      el("strong", { texto: r.rol }),
+      // Enlaza a su identidad: qué prompt tiene cargado y qué herramientas ve por MCP.
+      el("a", { href: `#/rol/${encodeURIComponent(r.rol)}`, texto: r.rol }),
       detalle,
     ]);
   });
@@ -400,7 +401,7 @@ function respuestaDelChat(respuesta) {
   return burbujas;
 }
 
-function montarChat({ titulo, modo, endpoint }) {
+function montarChat({ titulo, modo, endpoint, guardado = false }) {
   const nodo = document.getElementById("tpl-chat").content.cloneNode(true);
   const seccion = nodo.querySelector("section");
   seccion.querySelector('[data-rol="titulo"]').textContent = titulo;
@@ -410,6 +411,15 @@ function montarChat({ titulo, modo, endpoint }) {
   const form = seccion.querySelector('[data-rol="form"]');
   const entrada = seccion.querySelector('[data-rol="entrada"]');
   activarDictado(seccion, entrada);
+
+  // El chat del Asistente se guarda (ADR-0043); el del Encargado no —ese trabajo es un
+  // Asunto—, así que la barra de histórico solo aparece donde hay histórico.
+  let chatActual = null;
+  let historial = null;
+  if (guardado) {
+    historial = montarHistorial(hilo, (id) => (chatActual = id));
+    seccion.prepend(historial.barra);
+  }
 
   form.addEventListener("submit", async (evento) => {
     evento.preventDefault();
@@ -428,14 +438,100 @@ function montarChat({ titulo, modo, endpoint }) {
     const respuesta = await api(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mensaje }),
+      // Sin `chat` el servidor abre uno nuevo, que es el default que el Usuario pidió.
+      // Con él, el turno cae en la conversación que está abierta en pantalla.
+      body: JSON.stringify(chatActual ? { mensaje, chat: chatActual } : { mensaje }),
     });
     esperando.remove();
     hilo.append(...respuestaDelChat(respuesta));
     hilo.scrollTop = hilo.scrollHeight;
+
+    if (historial && respuesta.datos && respuesta.datos.chat) {
+      // El primer turno de un chat nuevo estrena su entrada en la lista, y el título
+      // recién existe después de ese turno. Se refresca sin repintar el hilo: lo que está
+      // en pantalla es más nuevo que lo que acaba de guardarse.
+      const estrenado = chatActual !== respuesta.datos.chat;
+      chatActual = respuesta.datos.chat;
+      await historial.refrescar(chatActual, { repintar: false });
+      if (estrenado) hilo.scrollTop = hilo.scrollHeight;
+    }
   });
 
   return seccion;
+}
+
+/* ── histórico de chats (ADR-0043) ──────────────────────────────────────── */
+
+function montarHistorial(hilo, fijarChat) {
+  const selector = el("select", { clase: "historial-lista" });
+  const nuevo = el("button", { clase: "boton-chico", type: "button", texto: "Nuevo" });
+  const borrar = el("button", { clase: "boton-chico peligro", type: "button", texto: "Borrar" });
+  const barra = el("div", { clase: "historial" }, [selector, nuevo, borrar]);
+
+  function pintar(mensajes) {
+    hilo.replaceChildren(
+      ...mensajes.map((m) =>
+        // Las mismas clases que el turno en vivo: un chat retomado tiene que verse igual
+        // que uno recién hablado, o el histórico parece otra cosa.
+        el("div", {
+          clase: `burbuja ${m.rol === "usuario" ? "usuario" : "sistema"}`,
+          texto: m.texto,
+        })
+      )
+    );
+    hilo.scrollTop = hilo.scrollHeight;
+  }
+
+  async function abrir(id) {
+    fijarChat(id || null);
+    if (!id) return pintar([]);
+    const { datos } = await api(`/api/chats/${id}`);
+    pintar((datos && datos.mensajes) || []);
+  }
+
+  /** Relee la lista. `repintar: false` deja el hilo como está — sirve justo después de un
+   *  turno, donde lo que hay en pantalla es más nuevo que lo que se acaba de guardar. */
+  async function refrescar(seleccionar, { repintar = true } = {}) {
+    const { datos } = await api("/api/chats");
+    const chats = datos || [];
+    selector.replaceChildren(
+      ...chats.map((c) =>
+        el("option", { value: c.id, texto: `${c.titulo || "(sin título)"} · ${c.mensajes}` })
+      )
+    );
+    if (!chats.length) {
+      selector.append(el("option", { value: "", texto: "sin chats guardados" }));
+      fijarChat(null);
+      if (repintar) pintar([]);
+      return;
+    }
+    selector.value = seleccionar || chats[0].id;
+    if (repintar) await abrir(selector.value);
+    else fijarChat(selector.value);
+  }
+
+  selector.addEventListener("change", () => abrir(selector.value));
+
+  nuevo.addEventListener("click", async () => {
+    const { datos } = await api("/api/chats", { method: "POST" });
+    await refrescar(datos && datos.id);
+  });
+
+  borrar.addEventListener("click", async () => {
+    const id = selector.value;
+    // No caducan y no se borran solos (ADR-0043): esta es la única forma de que un chat
+    // desaparezca, así que se confirma antes.
+    if (!id || !confirm("¿Borrar este chat? No se puede deshacer.")) return;
+    await api(`/api/chats/${id}`, { method: "DELETE" });
+    await refrescar();
+  });
+
+  // El panel arranca en el chat más reciente, que es el que el Usuario dejó abierto. Uno
+  // nuevo lo pide él con el botón: "nuevo por defecto" es del turno sin chat declarado
+  // (ADR-0043), no de cada carga de página — si no, abrir el panel dejaría un chat vacío
+  // cada vez.
+  refrescar();
+  return { barra, refrescar };
 }
 
 /* ── vistas ─────────────────────────────────────────────────────────────── */
@@ -515,6 +611,7 @@ async function vistaInicio() {
           titulo: "Chat con el Asistente",
           modo: "nivel raíz",
           endpoint: "/api/chat/asistente",
+          guardado: true,
         }),
         tarjeta(
           "Decisiones pendientes",
@@ -553,8 +650,17 @@ async function vistaProyecto(id) {
     asuntos.length
       ? asuntos.map((asunto) =>
           el("li", {}, [
-            el("span", { clase: "titulo", texto: asunto.titulo || asunto.id }),
+            el("a", {
+              clase: "titulo",
+              href: `#/asunto/${encodeURIComponent(id)}/${encodeURIComponent(asunto.id)}`,
+              texto: asunto.titulo || asunto.id,
+            }),
             chip(asunto.estado_efectivo),
+            // Un Asunto parado tiene que decir por qué. Sin esto el panel mostraba
+            // `iniciando` y se quedaba mudo, que desde afuera se lee como un cuelgue.
+            asunto.por_que_no_avanza
+              ? el("p", { clase: "aviso", texto: asunto.por_que_no_avanza })
+              : null,
             el("span", { clase: "meta" }, [
               el("code", { texto: asunto.id }),
               el("span", {
@@ -627,9 +733,178 @@ async function mostrarSalud() {
   document.getElementById("salud").replaceChildren(...nodos);
 }
 
+async function vistaAsunto(proyectoId, asuntoId) {
+  miga.hidden = false;
+  miga.replaceChildren(
+    el("a", { href: "#/", texto: "← Todos los proyectos" }),
+    el("a", {
+      href: `#/proyecto/${encodeURIComponent(proyectoId)}`,
+      texto: `← ${proyectoId}`,
+    })
+  );
+  vista.replaceChildren(el("p", { clase: "vacio", texto: "Cargando…" }));
+
+  const ruta = `/api/asuntos/${encodeURIComponent(proyectoId)}/${encodeURIComponent(asuntoId)}`;
+  const respuesta = await api(ruta);
+  if (!respuesta.ok) {
+    vista.replaceChildren(
+      el("p", {
+        clase: "vacio",
+        texto: respuesta.datos?.detalle || `No se pudo cargar el Asunto '${asuntoId}'.`,
+      })
+    );
+    return;
+  }
+
+  const asunto = respuesta.datos;
+  const historial = await api(`${ruta}/historial`);
+
+  const estado = el("div", { clase: "pila" }, [
+    el("p", {}, [
+      chip(asunto.estado_efectivo),
+      el("span", {
+        clase: "meta",
+        texto: `contenedor: ${asunto.estado_contenedor || "nunca tuvo"}`,
+        title: asunto.descripcion_contenedor || "",
+      }),
+    ]),
+    el("p", { texto: asunto.descripcion_estado }),
+    // Lo que antes había que deducir mirando el código: por qué está parado.
+    asunto.por_que_no_avanza
+      ? el("p", { clase: "aviso", texto: asunto.por_que_no_avanza })
+      : null,
+  ]);
+
+  const mensajes = historial.ok && historial.datos.length
+    ? el(
+        "ul",
+        { clase: "asuntos" },
+        historial.datos.map((m) =>
+          el("li", {}, [
+            el("span", { clase: "titulo", texto: m.rol }),
+            el("p", { texto: m.texto }),
+          ])
+        )
+      )
+    : el("p", { clase: "vacio", texto: "Todavía no hay mensajes en este Asunto." });
+
+  // Un contenedor por repo (ADR-0047): capacidades y registro van por repo, no por Asunto.
+  const repos = asunto.repos || [];
+  const [capacidades, registros] = await Promise.all([
+    Promise.all(repos.map((r) => api(`/api/repos/${encodeURIComponent(r)}/capacidades`))),
+    Promise.all(
+      repos.map((r) => api(`${ruta}/registro?repo=${encodeURIComponent(r)}`))
+    ),
+  ]);
+  const tarjetasRepos = repos.flatMap((r, i) => {
+    const c = capacidades[i].datos || {};
+    const salida = registros[i].datos || {};
+    const cuerpo = (c.skills || []).length
+      ? el(
+          "ul",
+          { clase: "asuntos" },
+          c.skills.map((s) =>
+            el("li", {}, [
+              el("span", { clase: "titulo", texto: s.nombre }),
+              el("p", { texto: s.descripcion || "" }),
+              el("span", { clase: "meta" }, [
+                el("code", { texto: s.ruta }),
+                s.version ? el("span", { texto: `v${s.version}` }) : null,
+              ]),
+            ])
+          )
+        )
+      : el("p", { clase: "vacio", texto: c.detalle || "Sin skills declaradas." });
+    const mcp = (c.servidores_mcp || []).join(", ") || "sin MCP";
+    const registroCuerpo = salida.existe
+      ? el("pre", { clase: "registro", texto: salida.registro || "(vacío)" })
+      : el("p", {
+          clase: "vacio",
+          texto: salida.detalle || `Todavía no se delegó un Agente a '${r}'.`,
+        });
+    return [
+      tarjeta(`Capacidades · ${r}`, mcp, cuerpo),
+      tarjeta(`Contenedor · ${r}`, salida.nombre || "sin contenedor", registroCuerpo),
+    ];
+  });
+
+  vista.replaceChildren(
+    el("div", { clase: "pila" }, [
+      tarjeta(asunto.titulo || asunto.id, asunto.id, estado),
+      tarjeta("Conversación", `${historial.datos?.length || 0} mensajes`, mensajes),
+      ...tarjetasRepos,
+    ])
+  );
+}
+
+async function vistaRol(rolId, proyectoId) {
+  miga.hidden = false;
+  miga.replaceChildren(el("a", { href: "#/", texto: "← Todos los proyectos" }));
+  vista.replaceChildren(el("p", { clase: "vacio", texto: "Cargando…" }));
+
+  const query = proyectoId ? `?proyecto=${encodeURIComponent(proyectoId)}` : "";
+  const respuesta = await api(`/api/roles/${encodeURIComponent(rolId)}/identidad${query}`);
+  if (!respuesta.ok) {
+    vista.replaceChildren(
+      el("p", {
+        clase: "vacio",
+        texto: respuesta.datos?.detail || `No se pudo cargar el rol '${rolId}'.`,
+      })
+    );
+    return;
+  }
+
+  const id = respuesta.datos;
+  // El prompt tal cual está en disco: es lo que se le agrega al system prompt (ADR-0040),
+  // y verlo entero es el punto — un resumen volvería a esconder lo que se quería mirar.
+  const prompt = id.prompt
+    ? el("pre", { clase: "registro", texto: id.prompt })
+    : el("p", {
+        clase: "vacio",
+        texto: `El rol '${id.rol}' todavía no tiene prompt propio: conversa sin identidad de rol, que no rompe nada (ADR-0044).`,
+      });
+
+  const herramientas = id.herramientas.length
+    ? el(
+        "ul",
+        { clase: "asuntos" },
+        id.herramientas.map((h) =>
+          el("li", {}, [
+            el("span", { clase: "titulo", texto: h.name }),
+            el("p", { texto: h.description || "" }),
+          ])
+        )
+      )
+    : el("p", { clase: "vacio", texto: id.detalle || "Sin herramientas." });
+
+  vista.replaceChildren(
+    el("div", { clase: "pila" }, [
+      tarjeta(id.rol, id.prompt_archivo || "sin prompt", [
+        el("p", { texto: id.descripcion }),
+        el("p", { clase: "meta" }, [
+          el("code", { texto: id.mcp_url || "sin servidor MCP" }),
+        ]),
+        id.detalle && id.herramientas.length === 0
+          ? el("p", { clase: "aviso", texto: id.detalle })
+          : null,
+      ]),
+      tarjeta("Identidad que se le agrega", "ADR-0040", prompt),
+      tarjeta(
+        "Herramientas que ve por MCP",
+        `${id.herramientas.length}`,
+        herramientas
+      ),
+    ])
+  );
+}
+
 function enrutar() {
   const partes = (location.hash || "#/").slice(2).split("/");
-  if (partes[0] === "proyecto" && partes[1]) vistaProyecto(decodeURIComponent(partes[1]));
+  if (partes[0] === "rol" && partes[1])
+    vistaRol(decodeURIComponent(partes[1]), partes[2] && decodeURIComponent(partes[2]));
+  else if (partes[0] === "asunto" && partes[1] && partes[2])
+    vistaAsunto(decodeURIComponent(partes[1]), decodeURIComponent(partes[2]));
+  else if (partes[0] === "proyecto" && partes[1]) vistaProyecto(decodeURIComponent(partes[1]));
   else vistaInicio();
 }
 
