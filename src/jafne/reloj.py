@@ -72,27 +72,56 @@ class Disparo:
         }
 
 
+def _tomar(descriptor: int) -> None:
+    """Pone un cerrojo del sistema operativo sobre el archivo abierto.
+
+    Del **sistema operativo** y no un archivo-centinela a secas: un centinela sobrevive a
+    un corte de luz, y el reloj arrancado como servicio se quedaría sin levantar en cada
+    arranque hasta que alguien borrara el archivo a mano — un trabajo programado que
+    nunca corre, en silencio, que es justo lo que ADR-0035 quiso evitar. Este cerrojo lo
+    suelta el kernel cuando el proceso muere, se caiga como se caiga.
+    """
+    if os.name == "nt":
+        import msvcrt
+
+        msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
 @contextmanager
 def candado(almacen: Almacen) -> Iterator[Path]:
     """Toma el candado del almacén mientras corre el reloj (ADR-0035)."""
     ruta = almacen.ruta / NOMBRE_CANDADO
+    descriptor = os.open(ruta, os.O_CREAT | os.O_RDWR)
     try:
-        descriptor = os.open(ruta, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        detalle = ruta.read_text(encoding="utf-8").strip() if ruta.is_file() else ""
+        _tomar(descriptor)
+    except OSError:
+        detalle = ""
+        try:
+            detalle = ruta.read_text(encoding="utf-8").strip()
+        except OSError:
+            pass
+        os.close(descriptor)
         raise RelojYaCorriendo(
-            f"Ya hay un reloj sobre {almacen.ruta} ({detalle or 'sin detalle'}). Dos "
-            f"relojes disparan el mismo trabajo dos veces (ADR-0035). Si estás seguro de "
-            f"que no quedó ninguno corriendo, borrá {ruta}."
+            f"Ya hay un reloj vivo sobre {almacen.ruta} ({detalle or 'sin detalle'}). Dos "
+            f"relojes disparan el mismo trabajo dos veces (ADR-0035). Si este mensaje "
+            f"aparece y no hay ningún reloj corriendo, es un bug: el cerrojo lo suelta el "
+            f"sistema operativo al morir el proceso, no hace falta borrar {ruta}."
         ) from None
-    with os.fdopen(descriptor, "w", encoding="utf-8") as archivo:
-        archivo.write(f"pid {os.getpid()} desde {datetime.now().astimezone().isoformat()}")
+
+    os.write(
+        descriptor,
+        f"pid {os.getpid()} desde {datetime.now().astimezone().isoformat()}".encode(),
+    )
     try:
         yield ruta
     finally:
-        # El candado es del proceso vivo, no del almacén: si no se suelta, el próximo
-        # arranque queda bloqueado por un reloj que ya no existe.
-        ruta.unlink(missing_ok=True)
+        # El archivo se deja: lo que importa es el cerrojo, y borrarlo mientras otro lo
+        # tiene tomado sería quitarle el piso al que sí está corriendo.
+        os.close(descriptor)
 
 
 def _ahora_local() -> datetime:

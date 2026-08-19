@@ -247,12 +247,28 @@ def test_dos_relojes_sobre_el_mismo_almacen_no_conviven(almacen):
 def test_el_candado_se_suelta_al_terminar(almacen):
     with candado(almacen) as ruta:
         assert ruta.is_file()
-    assert not ruta.exists()
+    # El archivo queda; lo que se soltó es el cerrojo, así que se puede volver a tomar.
+    with candado(almacen):
+        pass
 
 
 def test_el_candado_se_suelta_aunque_el_reloj_reviente(almacen):
-    # Si no, el próximo arranque queda bloqueado por un reloj que ya no existe.
+    # Si no, el próximo arranque queda bloqueado por un reloj que ya no existe — y como
+    # servicio eso es un trabajo programado que no corre nunca, en silencio.
     with pytest.raises(ZeroDivisionError):
-        with candado(almacen) as ruta:
+        with candado(almacen):
             1 / 0
-    assert not ruta.exists()
+    with candado(almacen):
+        pass
+
+
+def test_un_archivo_de_candado_huerfano_no_bloquea_el_arranque(almacen):
+    """Un corte de luz deja el archivo, no el cerrojo.
+
+    Es la diferencia entre un centinela y un cerrojo del sistema operativo, y es lo que
+    permite arrancar el reloj como servicio: el kernel lo suelta al morir el proceso, se
+    caiga como se caiga, así que el arranque siguiente no necesita limpieza a mano.
+    """
+    (almacen.ruta / "reloj.lock").write_text("pid 999999 de un reloj que ya no existe")
+    with candado(almacen) as ruta:
+        assert ruta.is_file()
