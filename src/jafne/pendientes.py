@@ -125,6 +125,20 @@ _REGISTRO: tuple[Pendiente, ...] = (
         ),
     ),
     Pendiente(
+        clave="cerebro-del-encargado-conversando",
+        titulo="Con qué cerebro conversa un Encargado que todavía no tiene tarea",
+        bloqueado_por="ADR-0033 + ADR-0003",
+        pregunta=(
+            "ADR-0033 fijó que el Asistente corre en `medio` y que Encargado y Agente no "
+            "tienen tamaño por defecto: los elige el Encargado **por tarea**. El chat del "
+            "panel con un Encargado (ADR-0013) rompe ese supuesto — es una conversación "
+            "sin tarea todavía, así que no hay nada de donde derivar el tamaño. ¿Conversa "
+            "en `medio` como el Asistente hasta que haya trabajo, se declara un default "
+            "aparte en `cerebros.yaml`, o el chat obliga a abrir un Asunto primero? Se "
+            "encontró al escribir el adaptador, no antes: el contrato no lo pedía."
+        ),
+    ),
+    Pendiente(
         clave="rotacion-de-token",
         titulo="Rotación del token del panel y del nodo de voz",
         bloqueado_por="ADR-0020 + ADR-0038",

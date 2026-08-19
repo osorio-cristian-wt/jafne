@@ -24,6 +24,8 @@ fuentes:
   - docs/adr/0036-dictado-por-voz-con-whisper-local.md
   - docs/adr/0037-el-dictado-puede-delegarse-a-un-nodo-con-gpu.md
   - docs/adr/0038-tls-del-panel-con-ca-propia.md
+  - docs/adr/0039-el-chat-del-panel-usa-herramientas-acotadas-a-la-raiz-de-repos.md
+  - docs/adr/0040-identidad-de-rol-en-el-system-prompt.md
   - src/jafne/pendientes.py
 verificado: 2026-08-19
 ---
@@ -132,7 +134,7 @@ Cómo dejar los tres procesos corriendo solos en Windows —tareas programadas, 
 firewall y el acceso al panel desde la malla ZeroTier— está en la sección **Operación** del
 [README](../README.md#operación).
 
-Tests: `.venv/Scripts/python -m pytest` (258 casos, verde al 2026-08-19).
+Tests: `.venv/Scripts/python -m pytest` (295 casos, verde al 2026-08-19).
 
 ## Estructura
 
@@ -147,6 +149,8 @@ src/jafne/
     senal_saldo.py     proceder / conmutar / diferir (ADR-0026)
     roles.py           roles y su tamaño por defecto (ADR-0033)
     sesion.py          el contrato neutral de sesión (ADR-0031)
+    adaptador_anthropic.py  el contrato sobre la CLI de Claude Code (ADR-0034)
+    prompts/           la identidad de cada rol, un archivo por rol (ADR-0040)
     credenciales.py    estado de la credencial, sin tocarla (ADR-0034)
     despertares.py     la cola de despertares, como función del tiempo (ADR-0035)
     transcripcion.py   dictado por voz: local o delegado (ADR-0036, ADR-0037)
@@ -157,6 +161,7 @@ src/jafne/
     api.py             FastAPI: JSON, estáticos y token (ADR-0013, ADR-0020)
     web/               index.html + estilo.css + app.js, sin build (ADR-0015)
   acceso.py            bind, token y TLS, compartidos por panel y nodo (ADR-0020, ADR-0038)
+  servicio.py          ciclo de vida común de panel y nodo: log sin ruido inofensivo
   voz.py               el nodo que presta una GPU a la malla (ADR-0037)
   reloj.py             el proceso del reloj: candado, espera y disparo (ADR-0035)
   cli.py               jafne <comando>
@@ -199,6 +204,11 @@ tests/                 estados, catálogos, señal de saldo, almacén, cierre, r
 | Dictado por voz | `GET /api/voz` dice si se puede dictar y con qué; `POST /api/transcribir` devuelve el texto. El modelo se carga **perezoso** y queda caliente: un panel que nadie usó para dictar no paga memoria. | [ADR-0036](./adr/0036-dictado-por-voz-con-whisper-local.md) |
 | Voz: botón del chat | Graba con `MediaRecorder`, manda el audio crudo y pega el texto en el campo —no en el hilo—, para revisarlo antes de enviarlo. Sin motor, o fuera de un contexto seguro, aparece deshabilitado **con el motivo**. | ADR-0036 + ADR-0013 |
 | Voz: sin degradar en silencio | Si falta el paquete o el modelo declarado, responde 501 diciendo qué falta, con `decidido: true`. Nunca sirve una transcripción de un modelo más chico que el pedido. | ADR-0036 + ADR-0032 |
+| Adaptador de Anthropic | Las cuatro operaciones de ADR-0031 sobre la CLI: `abrir` inventa el id y lo impone con `--session-id`, `reanudar` usa `--resume`, `emitir` corre `-p … --output-format json`. `abrir` y `reanudar` no gastan un token. | [ADR-0034](./adr/0034-el-adaptador-usa-la-sesion-de-claude-code.md) + ADR-0028 + ADR-0031 |
+| Chat del panel con el Asistente | Conversa de verdad, con memoria entre turnos: el segundo turno reanuda la sesión del proveedor en vez de reinyectar el historial. La sesión vive en memoria del proceso —el panel no escribe estado—. | [ADR-0013](./adr/0013-panel-web-como-dashboard-visual.md) + ADR-0031 |
+| Chat con herramientas acotadas | El agente trabaja dentro de `C:/Repos` (`--add-dir` + `acceptEdits`); afuera el proveedor deniega y el turno termina pidiendo permiso. Verificado contra la CLI real: adentro escribe y lee, afuera no filtró el contenido. | [ADR-0039](./adr/0039-el-chat-del-panel-usa-herramientas-acotadas-a-la-raiz-de-repos.md) |
+| Identidad del Asistente | `--append-system-prompt-file` con el texto de `nucleo/prompts/asistente.md`: rol, jerarquía, borde y que las decisiones son del Usuario. Verificado contra la CLI real: preguntado quién es, contesta las cuatro cosas sin que el mensaje se las diga. | [ADR-0040](./adr/0040-identidad-de-rol-en-el-system-prompt.md) |
+| `saldo()` del adaptador | Devuelve `None` a propósito: la CLI informa **gasto** del turno y ADR-0025 fijó que la métrica es el **saldo**. Inventar uno desde el otro sería resolver `medicion-de-consumo` por la puerta de atrás. | ADR-0025 + ADR-0031 |
 | Voz: delegar en un nodo | `$JAFNE_VOZ_NODO` manda el audio a otra máquina de la malla; sin declararlo se transcribe acá. El panel muestra en cuál se transcribió. | [ADR-0037](./adr/0037-el-dictado-puede-delegarse-a-un-nodo-con-gpu.md) |
 | Voz: el nodo | `jafne voz` levanta dos endpoints y nada más: no lee `~/.jafne/` y no puede escribir estado. Un nodo con `$JAFNE_VOZ_NODO` puesto transcribe igual, no se reenvía a sí mismo. | ADR-0037 |
 | Voz: nodo caído | `NodoInalcanzable` → 501 con el motivo. **No** cae a la CPU local: la diferencia de latencia tiene que verse. | ADR-0037 |
@@ -223,6 +233,7 @@ registró y dice, al lado, que medirlo solo todavía no está decidido.
 | `workspace-broker` | **Descubrimiento de servicios del proyecto** — base de datos, colas, otros repos— con la red restringida de ADR-0011. Crear Workspaces ya no está bloqueado por una decisión: ADR-0027 fijó quién declara el aislamiento y ADR-0032 a qué runtime mapea. | [ADR-0011](./adr/0011-redes-y-puertos-de-workspace.md) |
 | `sprints` | El modelo está decidido (ejes independientes, estado afuera); falta **cuál** herramienta y qué vocabulario mínimo sirve para hablarle a cualquiera. Sin eso no hay contrato MCP que programar. | [ADR-0023](./adr/0023-sprints-ejes-independientes-y-estado-externo.md) + [ADR-0014](./adr/0014-gestion-de-sprints-via-mcp.md) |
 | `protocolo-asignacion-tareas` | El mensaje Encargado → Agente (hop 4). No bloquea al panel: se puede decidir aparte. | [protocolo-de-asignacion-de-tareas](../investigacion/protocolo-de-asignacion-de-tareas/research.md) |
+| `cerebro-del-encargado-conversando` | Con qué cerebro conversa un Encargado que todavía no tiene tarea. ADR-0033 no le dio default —lo elige por tarea— y una conversación no es una tarea. Apareció al escribir el adaptador. | ADR-0033 + ADR-0003 |
 | `rotacion-de-token` | Cada cuánto rota el token, quién lo rota y qué hacer si se filtra. Ahora son **dos** tokens, uno por servicio. El TLS ya se decidió (ADR-0038). | ADR-0020 + ADR-0038 |
 | `sincronia-entre-maquinas` | Qué pasa si el Usuario opera JAFNE desde dos máquinas con estado operativo distinto. | ADR-0021 |
 
@@ -237,11 +248,11 @@ que vuelve útil a ese registro.
 | Pieza | Decidida en | Qué falta escribir |
 |---|---|---|
 | Adaptador de la familia OpenAI | ADR-0010 + ADR-0028 | Sus cerebros se declaran y se listan; usarlos falla con `AdaptadorNoImplementado`. Relevar si su proveedor ofrece modo sesión adjuntable es parte de este trabajo, y ya no bloquea al contrato. |
-| Adaptador de Anthropic | ADR-0028 + ADR-0031 + [ADR-0034](./adr/0034-el-adaptador-usa-la-sesion-de-claude-code.md) | El contrato está congelado y verificado, y ADR-0034 fijó que se escribe sobre la **CLI** de Claude Code (`-p`, `--resume`, `--output-format json`), heredando la sesión del Usuario. Es lo que hoy deja al chat en 501. |
 | La skill de un trabajo programado | ADR-0024 + ADR-0035 | El reloj abre el Asunto y anota qué skill hay que correr; correrla es el adaptador otra vez. Hasta entonces el Asunto queda en `iniciando` con el pedido visible, que es lo honesto: el trabajo programado dispara de verdad, y lo que no pasa se ve. |
-| Chat del panel con Asistente y Encargado | ADR-0013 + ADR-0031 | La interfaz está y el diseño también: JAFNE es dueño del proceso y multiplexa. Falta escribirlo. Responde 501 diciendo que falta código, no decisión. |
-| `session_id` del proveedor en `meta.yaml` | ADR-0031 | El campo se decidió; se agrega cuando exista el adaptador que lo escriba, para no dejar superficie muerta. |
+| `session_id` del proveedor en `meta.yaml` | ADR-0031 | El adaptador ya lo produce, pero quien lo escribiría es el Encargado trabajando un Asunto, y ese camino no existe todavía. El chat del panel **no** puede persistirlo: escribiría estado (ADR-0035). Se agrega cuando haya quien lo escriba. |
 | Retomar el trabajo diferido por cupo | ADR-0026 + ADR-0035 | **Quien despierta ya existe**: el reloj encola el reset de `saldo.yaml` y llega a horario. Lo que falta es retomar el Asunto cuando llega, que es el adaptador. El disparo lo informa en vez de aparentar que corrió, y la hora sigue siendo correcta sobre un dato que hoy se carga a mano. |
+| Servidor MCP de JAFNE | ADR-0004 + ADR-0014 + ADR-0040 | El Usuario eligió MCP como la forma de darle al agente el estado de los proyectos y la delegación a un Encargado. Lo que expondría ya existe y hoy solo se ve por HTTP: proyectos, Asuntos y saldo. Hasta que exista, el prompt del Asistente **declara** que no lo tiene, para que conteste que no sabe en vez de salir a mirar el disco. |
+| Identidad del Encargado y del Agente | ADR-0040 | El patrón está escrito y el del Asistente corre; faltan `encargado.md` y `agente.md`. El del Encargado no tiene dónde estrenarse todavía: su chat responde 501 por `cerebro-del-encargado-conversando`. |
 
 ## Detalles de implementación que ningún ADR fija
 

@@ -64,7 +64,7 @@ proveedores, otro que se implementa uno— y quien los lea suelto va a elegir ma
 - [ADR-0012](./0012-motor-de-contenedores-podman.md) — Motor de contenedores por
   defecto: Podman. *Matizada por ADR-0032.*
 - [ADR-0013](./0013-panel-web-como-dashboard-visual.md) — Panel web como dashboard visual:
-  proyectos, chat con Asistente/Encargado y uso de suscripciones.
+  proyectos, chat con Asistente/Encargado y uso de suscripciones. *Matizada por ADR-0039.*
 - [ADR-0014](./0014-gestion-de-sprints-via-mcp.md) — La gestión de sprints es parte del
   trabajo regular, y se accede vía MCP.
 - [ADR-0015](./0015-stack-inicial-de-implementacion.md) — Stack inicial de implementación:
@@ -110,7 +110,7 @@ proveedores, otro que se implementa uno— y quien los lea suelto va a elegir ma
   `medio`; Encargado y Agente se eligen por tarea.
 - [ADR-0034](./0034-el-adaptador-usa-la-sesion-de-claude-code.md) — El adaptador maneja la
   CLI de Claude Code y hereda la sesión del Usuario; JAFNE no maneja credenciales.
-  *Matiza a ADR-0028.*
+  *Matiza a ADR-0028.* *Matizada por ADR-0040.*
 - [ADR-0035](./0035-el-reloj-corre-en-su-propio-proceso.md) — El reloj corre en su propio
   proceso, separado del panel, que vuelve a ser de solo lectura sobre el estado.
   *Reemplaza a ADR-0029.*
@@ -123,6 +123,12 @@ proveedores, otro que se implementa uno— y quien los lea suelto va a elegir ma
 - [ADR-0038](./0038-tls-del-panel-con-ca-propia.md) — El panel sirve TLS con una CA
   propia, y el motivo es desbloquear el micrófono del navegador, no la confidencialidad.
   *Matiza a ADR-0020.*
+- [ADR-0039](./0039-el-chat-del-panel-usa-herramientas-acotadas-a-la-raiz-de-repos.md) —
+  El chat del panel usa herramientas, acotadas a la raíz de repos del Usuario.
+  *Matiza a ADR-0013.*
+- [ADR-0040](./0040-identidad-de-rol-en-el-system-prompt.md) — La identidad del rol se
+  **agrega** al system prompt del proveedor, versionada en el repo y con un archivo por rol.
+  *Matiza a ADR-0034.*
 
 ## Plantilla
 

@@ -1,6 +1,6 @@
 # ADR-0034 — El adaptador maneja la CLI de Claude Code y hereda la sesión del Usuario
 
-- **Estado**: Aceptada
+- **Estado**: Aceptada, matizada por [ADR-0040](./0040-identidad-de-rol-en-el-system-prompt.md)
 - **Fecha**: 2026-08-18
 - **Matiza a**: [ADR-0028](./0028-anthropic-primero-alcance-de-adaptadores.md)
 

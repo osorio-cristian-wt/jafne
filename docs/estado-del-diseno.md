@@ -83,6 +83,12 @@ Misma relación que un Asunto tiene entre su `historial.jsonl` y su `meta.yaml`.
 |---|---|---|
 | Qué es | Dashboard visual: proyectos, Asuntos, chat y uso de suscripciones | [ADR-0013](./adr/0013-panel-web-como-dashboard-visual.md) |
 | Sobre el estado | Solo lectura, **sin excepciones**: lo muestra, no lo escribe | ADR-0008 + ADR-0013 + [ADR-0035](./adr/0035-el-reloj-corre-en-su-propio-proceso.md) |
+| Chat del panel | Habla con el agente **con herramientas**: el dashboard existe para eso | [ADR-0039](./adr/0039-el-chat-del-panel-usa-herramientas-acotadas-a-la-raiz-de-repos.md) |
+| Hasta dónde llega el agente | La raíz de repos del Usuario (`C:/Repos`). Afuera se deniega, y el turno termina | ADR-0039 |
+| Permisos | `acceptEdits` dentro de la raíz. **Nunca** `bypassPermissions` | ADR-0039 |
+| Identidad del agente | Se **agrega** al system prompt del proveedor, nunca lo reemplaza | [ADR-0040](./adr/0040-identidad-de-rol-en-el-system-prompt.md) |
+| Dónde vive el texto | Versionado en el repo, un archivo **por rol**. Hoy solo el del Asistente | ADR-0040 |
+| Estado de los proyectos | El agente lo **consulta por MCP**, no se le inyecta. Hasta que exista, el prompt declara que no lo tiene | ADR-0040 + [ADR-0004](./adr/0004-capacidades-por-repositorio.md) |
 | Hosting | Nunca en todas las interfaces; fuera de loopback exige token | [ADR-0020](./adr/0020-hosting-y-autenticacion-del-panel.md) |
 | TLS | **Opcional**, con CA propia (mkcert). Sin él se sirve HTTP y se avisa | [ADR-0038](./adr/0038-tls-del-panel-con-ca-propia.md) |
 | Para qué el TLS | Para **desbloquear el micrófono** del navegador, no por confidencialidad: la malla ya cifra | ADR-0038 + ADR-0011 |

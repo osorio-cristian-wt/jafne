@@ -339,7 +339,66 @@ function activarDictado(seccion, entrada) {
   });
 }
 
-/* ── chat (ADR-0013): la interfaz existe, el canal no está decidido ─────── */
+/* ── chat (ADR-0013, ADR-0031, ADR-0034) ────────────────────────────────── */
+
+/** Qué burbujas mostrar para una respuesta del chat.
+ *
+ *  Cada fallo se muestra distinto porque cada uno lleva a otra acción: falta una decisión
+ *  (se lee el pendiente), falta código, falta la sesión de Claude Code, o se cayó la red.
+ *  Un "sin respuesta" genérico para todos los casos no le dice a nadie qué hacer.
+ */
+function respuestaDelChat(respuesta) {
+  const d = respuesta.datos || {};
+
+  if (respuesta.status === 0)
+    return [
+      el("div", {
+        clase: "burbuja error",
+        texto: `No se pudo hablar con el panel: ${d.detalle || "sin detalle"}`,
+      }),
+    ];
+
+  // Los dos 501 no significan lo mismo, y el repo se toma en serio la diferencia: uno
+  // dice "nadie decidió esto todavía", el otro "está decidido, falta escribirlo".
+  if (respuesta.status === 501)
+    return [
+      d.pendiente
+        ? bloqueado(d.pendiente)
+        : el("div", { clase: "bloqueado" }, [
+            el("strong", { texto: "Falta código. " }),
+            document.createTextNode(d.detalle || "Decidido, pero todavía sin escribir."),
+          ]),
+    ];
+
+  if (!respuesta.ok)
+    return [
+      el("div", {
+        clase: "burbuja error",
+        texto: d.detalle || `El panel respondió ${respuesta.status}.`,
+      }),
+    ];
+
+  // Turno atendido: puede traer texto, o un error del propio proveedor —sin cupo, sesión
+  // caída— que llega con 200 porque el panel sí funcionó.
+  const burbujas = [];
+  for (const evento of d.eventos || []) {
+    if (evento.tipo === "error")
+      burbujas.push(el("div", { clase: "burbuja error", texto: evento.texto }));
+    else if (evento.tipo === "texto" && evento.texto)
+      burbujas.push(el("div", { clase: "burbuja sistema", texto: evento.texto }));
+  }
+
+  if (!burbujas.length)
+    burbujas.push(
+      el("div", {
+        clase: "burbuja error",
+        texto:
+          "El proveedor contestó sin texto. Probá `jafne credencial` para ver si la " +
+          "sesión de Claude Code sigue viva.",
+      })
+    );
+  return burbujas;
+}
 
 function montarChat({ titulo, modo, endpoint }) {
   const nodo = document.getElementById("tpl-chat").content.cloneNode(true);
@@ -360,19 +419,19 @@ function montarChat({ titulo, modo, endpoint }) {
     entrada.value = "";
     hilo.scrollTop = hilo.scrollHeight;
 
+    // Un turno tarda entre varios segundos y un minuto: sin esto la pantalla queda
+    // muerta y no se distingue "pensando" de "se colgó".
+    const esperando = el("div", { clase: "burbuja sistema pensando", texto: "Pensando…" });
+    hilo.append(esperando);
+    hilo.scrollTop = hilo.scrollHeight;
+
     const respuesta = await api(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mensaje }),
     });
-    hilo.append(
-      respuesta.status === 501
-        ? bloqueado(respuesta.datos?.pendiente)
-        : el("div", {
-            clase: "burbuja sistema",
-            texto: respuesta.datos?.detalle || "Sin respuesta.",
-          })
-    );
+    esperando.remove();
+    hilo.append(...respuestaDelChat(respuesta));
     hilo.scrollTop = hilo.scrollHeight;
   });
 

@@ -14,6 +14,8 @@ para quien las lea, y la acción que sigue a cada una también.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 #: Proveedores cuyo adaptador de sesión existe hoy (ADR-0028).
 #:
 #: El resto sigue **soportado por diseño** (ADR-0010) y declarado en `cerebros.yaml`: se
@@ -35,12 +37,21 @@ class AdaptadorNoImplementado(RuntimeError):
         )
 
 
-#: Adaptadores realmente construidos, por proveedor.
+#: Constructores de adaptadores realmente escritos, por proveedor.
 #:
-#: Está vacío a propósito, y la distinción con `PROVEEDORES_CON_ADAPTADOR` importa:
+#: La distinción con `PROVEEDORES_CON_ADAPTADOR` sigue importando aunque ahora haya uno:
 #: ese conjunto dice **en alcance** (ADR-0028 decidió que se implementa Anthropic), este
-#: dice **construido**. Confundirlos haría que el panel prometa un chat que no existe.
-REGISTRO: dict[str, object] = {}
+#: dice **construido**. Confundirlos haría que el panel prometa un chat que no existe —
+#: que es exactamente lo que pasaba con la familia OpenAI, todavía sin escribir.
+#:
+#: Se guardan **fábricas** y no instancias: cada conversación necesita su propio adaptador,
+#: porque el adaptador lleva adentro la sesión activa (ADR-0031).
+REGISTRO: dict[str, Callable[..., object]] = {}
+
+
+def registrar(proveedor: str, fabrica: Callable[..., object]) -> None:
+    """Declara que ese proveedor ya tiene adaptador escrito."""
+    REGISTRO[proveedor] = fabrica
 
 
 class AdaptadorNoConstruido(RuntimeError):
@@ -72,7 +83,10 @@ def exigir(proveedor: str) -> None:
 
 
 def obtener(proveedor: str) -> object:
-    """El adaptador de ese proveedor, si existe.
+    """La **fábrica** de adaptadores de ese proveedor, si existe.
+
+    Devuelve el constructor, no una instancia: quien quiera un adaptador listo para una
+    conversación usa `construir()`.
 
     Dos fallos distintos a propósito: fuera de alcance es `AdaptadorNoImplementado` (hay
     una decisión detrás), y en alcance pero sin escribir es `AdaptadorNoConstruido` (hay
@@ -80,7 +94,30 @@ def obtener(proveedor: str) -> object:
     decidir algo, y no falta.
     """
     exigir(proveedor)
-    adaptador = REGISTRO.get(proveedor)
-    if adaptador is None:
+    fabrica = REGISTRO.get(proveedor)
+    if fabrica is None:
         raise AdaptadorNoConstruido(proveedor)
-    return adaptador
+    return fabrica
+
+
+def construir(proveedor: str, **kwargs: object) -> object:
+    """Un adaptador nuevo de ese proveedor, listo para una conversación.
+
+    Uno por conversación, no uno compartido: el adaptador guarda adentro la sesión activa
+    (ADR-0031), así que reutilizarlo mezclaría dos conversaciones en la misma.
+    """
+    return obtener(proveedor)(**kwargs)
+
+
+def _registrar_los_escritos() -> None:
+    """Engancha los adaptadores que existen.
+
+    Se importan acá y no arriba para que el registro no dependa del orden de importación
+    ni arrastre `subprocess` a quien solo quiere preguntar qué proveedores hay.
+    """
+    from .adaptador_anthropic import construir as construir_anthropic
+
+    registrar("anthropic", construir_anthropic)
+
+
+_registrar_los_escritos()

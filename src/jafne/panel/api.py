@@ -33,7 +33,8 @@ from ..acceso import resolver_tls as _resolver_tls
 from ..acceso import resolver_token as _resolver_token
 from ..acceso import validar_bind as _validar_bind
 from ..nucleo.adaptadores import AdaptadorNoConstruido, AdaptadorNoImplementado
-from ..nucleo.adaptadores import obtener as obtener_adaptador
+from ..nucleo.adaptadores import construir as construir_adaptador
+from ..nucleo.adaptador_anthropic import raiz_de_trabajo
 from ..nucleo.almacen import SinCerebroParaElRol
 from ..nucleo.credenciales import estado as credencial_estado
 from ..nucleo.roles import DESCRIPCIONES as DESCRIPCIONES_ROL
@@ -41,6 +42,7 @@ from ..nucleo.transcripcion import AudioInvalido, TranscripcionNoDisponible
 from ..nucleo.transcripcion import estado as voz_estado
 from ..nucleo.transcripcion import transcribir as voz_transcribir
 from ..nucleo.roles import Rol, tamano_por_defecto
+from ..nucleo.sesion import TipoEvento
 from ..nucleo import (
     DESCRIPCIONES,
     DESCRIPCIONES_CONTENEDOR,
@@ -93,6 +95,8 @@ def crear_app(ruta_almacen: Path | None = None, token: str | None = None) -> Fas
     )
     app.state.almacen = Almacen(ruta_almacen)
     app.state.token = token
+    #: Conversaciones vivas, por clave. En memoria: el panel no escribe estado.
+    app.state.sesiones = {}
 
     def almacen(request: Request) -> Almacen:
         return request.app.state.almacen
@@ -369,30 +373,62 @@ def crear_app(ruta_almacen: Path | None = None, token: str | None = None) -> Fas
         # mientras tanto, sin poder ni servir la grilla de proyectos.
         return (await run_in_threadpool(voz_transcribir, audio, idioma)).a_dict()
 
-    # ── decidido, todavía sin construir ──────────────────────────────────────
+    # ── el chat (ADR-0013, ADR-0031, ADR-0034) ───────────────────────────────
     #
-    # Hasta ADR-0031 el chat estaba bloqueado por una **decisión**: no se sabía quién era
-    # dueño del proceso del agente. Ahora se sabe —lo es JAFNE, y el panel se adjunta a
-    # JAFNE, no al proveedor—, así que lo que falta es el adaptador. Sigue siendo un 501,
-    # pero por otra razón, y la respuesta lo dice: no falta decidir, falta código.
+    # Las sesiones viven en la **memoria del proceso**, no en `~/.jafne/`, y no es una
+    # simplificación: el panel no escribe estado (ADR-0008/ADR-0013), propiedad que
+    # ADR-0035 le devolvió entera al sacarle el reloj. Guardar acá el id de sesión lo
+    # volvería escritor otra vez por la puerta de atrás.
+    #
+    # Lo que se paga: al reiniciar el panel la conversación arranca de cero. La sesión
+    # sigue viva del lado del proveedor —es reanudable por id (ADR-0031)—, lo que se
+    # pierde es el id. Persistirlo es de quien sí puede escribir: el Encargado, en el
+    # `meta.yaml` de su Asunto, cuando exista ese camino.
 
-    def _chat(request: Request) -> dict[str, Any]:
-        cerebro = almacen(request).cerebro_de(Rol.ASISTENTE)
-        obtener_adaptador(cerebro.proveedor)  # levanta: todavía no hay adaptador
-        raise AssertionError("inalcanzable mientras el registro esté vacío")
+    def _sesion_de(request: Request, clave: str, rol: Rol) -> Any:
+        """El adaptador de esa conversación, abriéndolo la primera vez."""
+        sesiones = request.app.state.sesiones
+        if clave not in sesiones:
+            cerebro = almacen(request).cerebro_de(rol)
+            if cerebro is None:
+                # ADR-0033 no le dio tamaño por defecto al Encargado —lo elige por tarea—
+                # y una conversación todavía no es una tarea. Se declara en vez de
+                # inventar un default, que es la regla de ADR-0015.
+                raise DecisionPendiente("cerebro-del-encargado-conversando")
+            adaptador = construir_adaptador(
+                cerebro.proveedor, modelo=cerebro.modelo, rol=rol
+            )
+            # La conversación arranca parada en la raíz de trabajo (ADR-0039): es donde
+            # están los repos, y es el borde de lo que el agente puede tocar.
+            adaptador.abrir(raiz_de_trabajo(), cerebro.tamano)
+            sesiones[clave] = adaptador
+        return sesiones[clave]
+
+    async def _chat(request: Request, clave: str, rol: Rol, mensaje: str) -> dict[str, Any]:
+        adaptador = _sesion_de(request, clave, rol)
+        # Fuera del bucle de eventos: un turno es un subproceso que puede tardar un minuto,
+        # y en el hilo del bucle dejaría al panel entero congelado mientras piensa.
+        eventos = await run_in_threadpool(lambda: list(adaptador.emitir(mensaje)))
+        return {
+            "eventos": [e.a_dict() for e in eventos],
+            "texto": "".join(e.texto for e in eventos if e.tipo is TipoEvento.TEXTO),
+            "id_sesion": getattr(adaptador, "id_sesion", None),
+        }
 
     @app.post("/api/chat/asistente")
-    def chat_asistente(request: Request, entrada: MensajeEntrada) -> dict[str, Any]:
+    async def chat_asistente(request: Request, entrada: MensajeEntrada) -> dict[str, Any]:
         """Chat con el Asistente desde la raíz del panel (ADR-0013, ADR-0031)."""
-        return _chat(request)
+        return await _chat(request, "asistente", Rol.ASISTENTE, entrada.mensaje)
 
     @app.post("/api/proyectos/{proyecto_id}/chat")
-    def chat_encargado(
+    async def chat_encargado(
         request: Request, proyecto_id: str, entrada: MensajeEntrada
     ) -> dict[str, Any]:
         """Chat con el Encargado del proyecto — el modo directo de ADR-0002."""
-        almacen(request).proyecto(proyecto_id)  # 404 antes que 501 si no existe
-        return _chat(request)
+        almacen(request).proyecto(proyecto_id)  # 404 antes que nada si no existe
+        return await _chat(
+            request, f"proyecto:{proyecto_id}", Rol.ENCARGADO, entrada.mensaje
+        )
 
     if WEB.is_dir():
         app.mount("/", StaticFiles(directory=WEB, html=True), name="web")

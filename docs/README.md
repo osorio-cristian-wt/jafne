@@ -11,3 +11,6 @@ explorando vive en [`investigacion/`](../investigacion/) (ver [`WORKFLOW.md`](..
   numeradas, append-only.
 - [`estado-de-implementacion.md`](./estado-de-implementacion.md) — Qué del diseño ya corre
   en `src/jafne/` y qué está esperando una decisión.
+- [`encargo-pendiente.md`](./encargo-pendiente.md) — **Traspaso**: trabajo pedido y todavía
+  no hecho, con lo que hay que preguntarle al Usuario antes de escribirlo. No es diseño: se
+  vacía a medida que cada encargo se cierra en su ADR.

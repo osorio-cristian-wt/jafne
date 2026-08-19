@@ -346,6 +346,15 @@ main {
   max-width: 85%;
 }
 
+.burbuja.error {
+  background: var(--bloqueado-fondo);
+  color: var(--bloqueado);
+  border: 1px solid var(--bloqueado);
+  white-space: pre-wrap;
+}
+
+.burbuja.pensando { opacity: .6; font-style: italic; }
+
 .burbuja.usuario {
   justify-self: end;
   background: var(--acento);

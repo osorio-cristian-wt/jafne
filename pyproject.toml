@@ -33,6 +33,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "jafne.panel" = ["web/*"]
+"jafne.nucleo.prompts" = ["*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

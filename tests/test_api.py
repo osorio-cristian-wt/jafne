@@ -122,22 +122,163 @@ def test_un_id_invalido_da_400_y_no_escapa_de_la_carpeta(cliente):
 # ── lo no decidido ───────────────────────────────────────────────────────────
 
 
-def test_el_chat_sigue_en_501_pero_ya_no_por_falta_de_decision(cliente):
-    # Hasta ADR-0031 faltaba decidir quién era dueño del proceso. Ahora falta el
-    # adaptador, y la respuesta distingue las dos cosas.
+def test_el_chat_con_el_asistente_habla_de_verdad(cliente, monkeypatch):
+    """El chat dejó de ser un 501: hay adaptador (ADR-0028/0031/0034).
+
+    El proveedor se sustituye por uno de mentira — no se gastan tokens del Usuario en la
+    suite, y lo que se verifica es el cableado del panel, no que Claude sepa contestar.
+    """
+    from jafne.nucleo import adaptadores
+    from jafne.nucleo.sesion import Evento, TipoEvento
+
+    class AdaptadorFalso:
+        proveedor = "anthropic"
+        id_sesion = "sesion-de-prueba"
+
+        def __init__(self, **_):
+            self.dichos = []
+
+        def abrir(self, directorio, tamano):
+            return self.id_sesion
+
+        def reanudar(self, id_sesion):
+            pass
+
+        def emitir(self, mensaje):
+            self.dichos.append(mensaje)
+            yield Evento(tipo=TipoEvento.TEXTO, texto=f"escuché: {mensaje}")
+            yield Evento(tipo=TipoEvento.RESULTADO, datos={"id_sesion": self.id_sesion})
+
+        def saldo(self):
+            return None
+
+    monkeypatch.setitem(adaptadores.REGISTRO, "anthropic", AdaptadorFalso)
+
     respuesta = cliente.post("/api/chat/asistente", json={"mensaje": "hola"})
-    assert respuesta.status_code == 501
+
+    assert respuesta.status_code == 200
     cuerpo = respuesta.json()
-    assert cuerpo["error"] == "adaptador_no_disponible"
-    assert cuerpo["decidido"] is True
-    assert "pendiente" not in cuerpo
+    assert cuerpo["texto"] == "escuché: hola"
+    assert cuerpo["id_sesion"] == "sesion-de-prueba"
+    assert [e["tipo"] for e in cuerpo["eventos"]] == ["texto", "resultado"]
 
 
-def test_el_chat_con_el_encargado_valida_el_proyecto_antes_del_501(cliente):
+def test_la_conversacion_del_asistente_se_reusa_entre_turnos(cliente, monkeypatch):
+    # Un adaptador por conversación, no uno por turno: el adaptador lleva adentro la
+    # sesión (ADR-0031), y rehacerlo empezaría de cero cada mensaje.
+    from jafne.nucleo import adaptadores
+    from jafne.nucleo.sesion import Evento, TipoEvento
+
+    construidos = []
+
+    class AdaptadorFalso:
+        proveedor = "anthropic"
+        id_sesion = "s1"
+
+        def __init__(self, **_):
+            construidos.append(self)
+
+        def abrir(self, directorio, tamano):
+            return self.id_sesion
+
+        def emitir(self, mensaje):
+            yield Evento(tipo=TipoEvento.TEXTO, texto="ok")
+
+        def reanudar(self, id_sesion):
+            pass
+
+        def saldo(self):
+            return None
+
+    monkeypatch.setitem(adaptadores.REGISTRO, "anthropic", AdaptadorFalso)
+    cliente.post("/api/chat/asistente", json={"mensaje": "uno"})
+    cliente.post("/api/chat/asistente", json={"mensaje": "dos"})
+    assert len(construidos) == 1
+
+
+def test_el_chat_le_dice_al_adaptador_con_que_rol_habla(cliente, monkeypatch):
+    """Sin el rol el agente no sabe quién es (ADR-0040).
+
+    El adaptador resuelve el system prompt a partir del rol, así que si el panel no se lo
+    pasa el turno vuelve a viajar sin identidad — que es el estado que ADR-0040 corrigió.
+    """
+    from jafne.nucleo import adaptadores
+    from jafne.nucleo.roles import Rol
+    from jafne.nucleo.sesion import Evento, TipoEvento
+
+    recibidos = []
+
+    class AdaptadorFalso:
+        proveedor = "anthropic"
+        id_sesion = "s1"
+
+        def __init__(self, **kwargs):
+            recibidos.append(kwargs)
+
+        def abrir(self, directorio, tamano):
+            return self.id_sesion
+
+        def emitir(self, mensaje):
+            yield Evento(tipo=TipoEvento.TEXTO, texto="ok")
+
+        def reanudar(self, id_sesion):
+            pass
+
+        def saldo(self):
+            return None
+
+    monkeypatch.setitem(adaptadores.REGISTRO, "anthropic", AdaptadorFalso)
+    cliente.post("/api/chat/asistente", json={"mensaje": "hola"})
+    assert recibidos[0]["rol"] is Rol.ASISTENTE
+
+
+def test_el_chat_no_escribe_estado(cliente, almacen, monkeypatch):
+    # ADR-0035 le devolvió al panel la propiedad de no escribir estado, y el chat no la
+    # rompe: la sesión vive en memoria del proceso, no en ~/.jafne/.
+    from jafne.nucleo import adaptadores
+    from jafne.nucleo.sesion import Evento, TipoEvento
+
+    class AdaptadorFalso:
+        proveedor = "anthropic"
+        id_sesion = "s1"
+
+        def __init__(self, **_):
+            pass
+
+        def abrir(self, directorio, tamano):
+            return self.id_sesion
+
+        def emitir(self, mensaje):
+            yield Evento(tipo=TipoEvento.TEXTO, texto="ok")
+
+        def reanudar(self, id_sesion):
+            pass
+
+        def saldo(self):
+            return None
+
+    monkeypatch.setitem(adaptadores.REGISTRO, "anthropic", AdaptadorFalso)
+    antes = sorted(p.name for p in almacen.ruta.iterdir())
+    cliente.post("/api/chat/asistente", json={"mensaje": "hola"})
+    assert sorted(p.name for p in almacen.ruta.iterdir()) == antes
+
+
+def test_el_chat_del_encargado_valida_el_proyecto_primero(cliente):
     assert cliente.post("/api/proyectos/inexistente/chat", json={"mensaje": "x"}).status_code == 404
+
+
+def test_el_encargado_sin_tarea_no_tiene_cerebro_y_se_dice(cliente):
+    """ADR-0033 no le dio default al Encargado: lo elige **por tarea**.
+
+    Una conversación todavía no es una tarea, así que no hay de dónde sacar el tamaño. El
+    panel lo declara como decisión pendiente en vez de inventar un default — que es la
+    regla de ADR-0015 y lo que mantiene confiable a `jafne pendientes`.
+    """
     respuesta = cliente.post("/api/proyectos/borr/chat", json={"mensaje": "hola"})
     assert respuesta.status_code == 501
-    assert respuesta.json()["error"] == "adaptador_no_disponible"
+    cuerpo = respuesta.json()
+    assert cuerpo["error"] == "decision_pendiente"
+    assert cuerpo["pendiente"]["clave"] == "cerebro-del-encargado-conversando"
 
 
 def test_las_decisiones_pendientes_son_consultables(cliente):
