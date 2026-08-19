@@ -8,16 +8,12 @@ verificado: 2026-08-19
 
 # Encargo pendiente — para delegar
 
-Los trabajos que el Usuario pidió el 2026-08-19 y que quedaron sin hacer. Este documento
-es el **traspaso**: lo que hay que construir, qué ya está decidido, y —sobre todo— **qué
-falta preguntarle al Usuario antes de escribir una línea**.
+Trabajo pedido y todavía no hecho. Este documento es el **traspaso**: lo que hay que
+construir, qué ya está decidido, y —sobre todo— **qué falta preguntarle al Usuario antes de
+escribir una línea**.
 
-Eran cuatro. El primero —la identidad del Asistente en el system prompt— se terminó el
-mismo día y su sección ya no está acá: vive en
-[ADR-0040](./adr/0040-identidad-de-rol-en-el-system-prompt.md).
-
-No es documentación de diseño: cuando un encargo se termina, su sección se borra de acá y
-lo que quede vive en su ADR y en los dos derivados.
+No es documentación de diseño: cuando un encargo se termina, su sección se borra de acá y lo
+que quede vive en su ADR y en los dos derivados.
 
 ---
 
@@ -38,7 +34,12 @@ Concretamente:
 - Sí te corresponde sin preguntar: bugs, consecuencias mecánicas, y trabajo ya decidido.
 - Si dudás de si algo es decisión, es decisión.
 
-En cada encargo de abajo hay una sección **"Preguntar antes"**. No la saltees.
+Esto vale también para lo que **descubrís mientras construís**. El 2026-08-19 apareció que
+`krun` no permite `podman exec`, y ahí se cometió el error en las dos direcciones: primero
+se preguntó bien y salió ADR-0042, pero adentro de ese ADR se coló una cláusula que nadie
+había pedido —*"un Workspace es una tarea y muere"*— derivada mal de ese mismo hallazgo. El
+Usuario la detectó y hubo que revertirla con seis ADR encima. Un hallazgo técnico acota lo
+que es posible; **no decide** lo que se hace con eso.
 
 ---
 
@@ -62,136 +63,95 @@ Las reglas que más se rompen sin querer:
 - **Lo que no está decidido no se programa**: se declara en `src/jafne/pendientes.py` y
   falla citando qué lo bloquea.
 - Tests: nombres descriptivos en español, un comportamiento por test, y comentarios que
-  citan el ADR que fijan. `.venv/Scripts/python -m pytest` — 295 en verde al 2026-08-19.
+  citan el ADR que fijan. `.venv/Scripts/python -m pytest` — 386 en verde al 2026-08-19.
 
 ---
 
-## Encargo 2 — Los chats, versionados en `~/.jafne/chats/`
+## Lo que se cerró el 2026-08-19
 
-### Lo que el Usuario pidió y decidió
+Se dejan nombrados —no descritos— para que nadie los vuelva a abrir creyendo que faltan.
 
-> *"si es importante versionar los chats que tengo con el asistente, por defecto debería
-> ser nuevo pero con un histórico"*
+**Primera tanda:**
 
-Y eligió, entre tres opciones: **el panel escribe en `~/.jafne/chats/`**.
+| Encargo | Dónde vive ahora |
+|---|---|
+| El prompt del Asistente | [ADR-0040](./adr/0040-identidad-de-rol-en-el-system-prompt.md) |
+| Los chats versionados | [ADR-0043](./adr/0043-los-chats-del-asistente-se-guardan.md) |
+| El servidor MCP | [ADR-0042](./adr/0042-infraestructura-es-un-proceso-con-el-mcp-adentro.md) |
+| La cadena de delegación | [ADR-0044](./adr/0044-la-cadena-de-delegacion.md) |
 
-### Por qué no es solo escribir un archivo
+**Segunda tanda, el mismo día**, y con un replanteo de fondo del Usuario que dio vuelta el
+modelo de contenedores:
 
-Choca de frente con una propiedad que se acaba de recuperar. Hoy el chat guarda la sesión
-**en memoria del proceso** justamente para no romperla:
+| Encargo | Dónde vive ahora |
+|---|---|
+| Para qué existen los contenedores | [ADR-0045](./adr/0045-para-que-existen-los-contenedores.md) |
+| El cerebro corre afuera | [ADR-0046](./adr/0046-el-cerebro-corre-afuera-el-contenedor-ejecuta.md) |
+| Un contenedor por repositorio | [ADR-0047](./adr/0047-los-contenedores-son-por-repositorio.md) |
+| El repo declara su entorno | [ADR-0048](./adr/0048-el-repo-declara-su-entorno-de-desarrollo.md) |
+| El Encargado siembra entorno y skills | [ADR-0049](./adr/0049-el-encargado-siembra-el-entorno-y-las-skills-de-un-repo.md) |
+| Alias de red y registro de puertos | [ADR-0050](./adr/0050-descubrimiento-por-alias-y-registro-de-puertos.md) |
 
-- [ADR-0008](./adr/0008-estado-de-asuntos-y-panel-web.md) y
-  [ADR-0013](./adr/0013-panel-web-como-dashboard-visual.md) definieron el panel como
-  observador que **no escribe estado**.
-- [ADR-0029](./adr/0029-el-reloj-corre-en-el-proceso-del-panel.md) le abrió una excepción
-  al meterle el reloj adentro.
-- [ADR-0035](./adr/0035-el-reloj-corre-en-su-propio-proceso.md) revirtió eso y le devolvió
-  la propiedad **entera, sin excepciones**. Tiene menos de un día.
+Salió también `agente.md`, que llevaba tiempo bloqueado, y el **disparador** de la
+delegación (`agente_delegar`).
 
-Que el panel escriba chats la vuelve a mover. Eso **no** lo invalida —el Usuario decidió—
-pero exige un ADR que lo diga con todas las letras y acote la regla: probablemente de *"el
-panel no escribe estado"* a *"el panel no escribe estado **de Asuntos**"*. Escribirlo sin
-ese ADR sería erosionar por la puerta de atrás lo que ADR-0035 arregló por la puerta de
-adelante.
+**Dos cosas de esa tanda merecen leerse enteras**, porque son el tipo de error que se repite:
 
-### Preguntar antes
-
-- ¿Qué se guarda? ¿Solo `(id de sesión, título, fecha)` y el contenido lo tiene el
-  proveedor, o el transcript completo del lado de JAFNE? Lo segundo es agnóstico
-  ([ADR-0003](./adr/0003-cerebro-por-rol-y-agnosticismo-de-proveedor.md)) y duplica datos.
-- "Nuevo por defecto": ¿el chat viejo se lista y se puede reanudar, o queda solo de
-  lectura?
-- ¿Se borran? ¿Caducan? Un chat por día llena el directorio en un año.
-- ¿Los chats de Encargado se guardan igual, o esos sí deberían ser Asuntos?
-
-### Dónde tocar
-
-- `src/jafne/nucleo/almacen.py` — `ruta_chats`, plantilla, lectura y escritura. Fijate
-  cómo está hecho `programado.yaml` para el estilo.
-- `src/jafne/panel/api.py` — hoy `app.state.sesiones` es un dict en memoria; ahí está el
-  comentario que explica por qué.
-- El panel necesita UI para listar y retomar.
+1. **Una cláusula de ADR-0042 se había tomado sin consultar** —*"un Workspace es una tarea y
+   muere"*— y contradecía a ADR-0016, que seguía vigente. Peor: contradecía la frase del
+   propio Usuario que había dado origen al ADR (*"manteniendo los Asuntos y las VM
+   corriendo"*). El razonamiento estaba mal: `krun` bloquea `exec`, no la persistencia.
+2. **El aislamiento entre proyectos no existía.** ADR-0011 lo prometía desde 2026-07-23, y
+   medido contra el motor real un contenedor de un proyecto alcanzaba al de otro por IP con
+   0% de pérdida. Hacía falta `--opt isolate=true`. Una garantía escrita no es una garantía
+   probada.
 
 ---
 
-## Encargo 3 — Servidor MCP de JAFNE
+## Lo que sigue
 
-### Lo que el Usuario pidió y decidió
+### 1 — La siembra de un repo (ADR-0049)
 
-> *"el asistente debería de tener un acceso rápido al estado de los distintos proyectos y
-> poder delegarme con uno de los encargados"*
+**Decidido y sin preguntas abiertas.** Al delegar por primera vez a un repo sin
+`Dockerfile.dev`, el Encargado inspecciona el repo, infiere el stack y escribe **dos cosas**:
+el `Dockerfile.dev` y las skills del Agente en `.agents/skills/`. No escala: el control es
+la revisión del diff.
 
-Eligió, entre tres opciones: **un servidor MCP que el agente consulta**.
+Inferir el stack **no necesita investigación** — los manifiestos son deterministas
+(`package.json`, `pyproject.toml`, `pubspec.yaml`, `go.mod`, `Cargo.toml`), y para lo raro
+hay búsqueda web. Lo único que suelen no traer es la **versión** del runtime, y ahí hay que
+pinear una y decirlo en vez de dejar `latest` flotando.
 
-Es coherente con [ADR-0004](./adr/0004-capacidades-por-repositorio.md), que ya había
-elegido MCP como la forma de dar capacidades, y con
-[ADR-0014](./adr/0014-gestion-de-sprints-via-mcp.md).
+### 2 — Publicar puertos: está construido pero no conectado
 
-### Qué expondría
+`nucleo/puertos.py` lleva el registro y `Motor.crear_contenedor()` acepta `publicar=`, pero
+**el Broker todavía no los une**: `lanzar()` no reserva ni publica nada. Es trabajo, no
+decisión — ADR-0050 ya fijó el rango, la idempotencia y la liberación al destruir.
 
-Como mínimo, lo que ya existe y hoy solo se ve por HTTP: proyectos, Asuntos y su estado,
-saldo. Y lo que habilita la delegación: abrir un Asunto, y derivar la conversación a un
-Encargado.
+Con eso cerrado queda posible lo que el Usuario pidió: levantar back, bff y front de un
+proyecto, que se vean entre sí por alias, y publicar solo el front hacia la malla.
 
-Ojo con una asimetría: **leer es inofensivo, escribir no**. Abrir un Asunto desde el chat
-convierte al agente en escritor de estado, que es la misma frontera del encargo 2.
+### 3 — Generar un proyecto
 
-### Preguntar antes
+**Decidido qué es** (ADR-0044): entrada en `proyectos.yaml`, uno o más repos —típicamente
+los de una organización—, scaffold del stack, y `engineering.yaml` con las capacidades de
+ADR-0004.
 
-- ¿El MCP es de **solo lectura** al principio, o desde el día uno puede abrir Asuntos?
-- ¿Corre como proceso propio —van cuatro contando panel, reloj y nodo de voz— o embebido
-  en el panel? Ojo:
-  [ADR-0035](./adr/0035-el-reloj-corre-en-su-propio-proceso.md) es la referencia de cómo
-  se separó el último, y por qué.
-- ¿Cómo se le declara al agente? La CLI toma `--mcp-config`.
-- ¿El Encargado ve lo mismo que el Asistente, o menos?
+**Preguntar antes:**
 
-### No te olvides de esto al terminar
+- ¿Qué scaffolds existen, y quién los mantiene? Sin eso, "scaffold del stack" no se puede
+  programar.
+- ¿JAFNE crea los repos en GitHub, o toma repos que ya existen? El Usuario mencionó
+  [github.com/BoRR-Pizzeria](https://github.com/BoRR-Pizzeria/) como la forma de referencia.
 
-[ADR-0040](./adr/0040-identidad-de-rol-en-el-system-prompt.md) dejó en
-`src/jafne/nucleo/prompts/asistente.md` una sección que **declara que el agente todavía no
-puede consultar el estado de los proyectos**, para que conteste que no sabe en vez de salir
-a mirar el disco a mano. Cuando el MCP exista esa sección pasa a ser mentira: hay que
-sacarla en el mismo commit.
+La pregunta de si hace falta aprobación para las capacidades **ya no aplica**: ADR-0049
+sacó esa cadena.
 
----
+### 4 — Las decisiones que siguen abiertas
 
-## Encargo 4 — La cadena de delegación
-
-### Lo que el Usuario pidió
-
-> *"el asistente con mi comando de texto debería de poder ser capaz de generar el proyecto
-> con sus necesidades delegando a los encargados con un modelo grande, luego el encargado
-> puede delegar agentes de código con sus decisiones de cerebro"*
-
-De ahí salen dos cosas ya decididas por él:
-
-- **El Encargado conversa en modelo `grande`.**
-- **El Encargado elige el cerebro de sus Agentes**, que es lo que ADR-0003 ya decía.
-
-### Lo que eso desbloquea
-
-Hay una entrada en `src/jafne/pendientes.py` llamada `cerebro-del-encargado-conversando`,
-declarada el 2026-08-19 justamente porque
-[ADR-0033](./adr/0033-tamano-por-defecto-del-rol-asistente.md) no le dio tamaño por defecto
-al Encargado —*"lo elige por tarea"*— y una conversación todavía no es una tarea. Hoy
-`POST /api/proyectos/{id}/chat` responde **501** citando ese pendiente.
-
-Que el Usuario haya dicho "modelo grande" **contesta** esa pregunta. Hace falta un ADR que
-matice a ADR-0033 y, en el mismo commit, sacar la entrada de `pendientes.py` y actualizar
-los dos derivados.
-
-### Preguntar antes
-
-- ¿El Asistente delega **solo** o propone y el Usuario confirma? Es la diferencia entre un
-  orquestador y un ejecutor, y roza la regla nº 1.
-- ¿Delegar abre un Asunto (ADR-0006) o es una conversación aparte?
-- ¿El Encargado corre en el mismo proceso, o en un Workspace? Ojo
-  [ADR-0027](./adr/0027-clase-de-riesgo-declarada-por-el-encargado.md) y
-  [ADR-0032](./adr/0032-driver-de-la-clase-generado.md): el aislamiento de agentes que
-  escriben código ya está decidido, y el `workspace-broker` sigue sin construirse.
-- "Generar el proyecto con sus necesidades": ¿qué es un proyecto generado? ¿Repo, scaffold,
-  `engineering.yaml`, entrada en `proyectos.yaml`? Esto solo lo puede contestar el Usuario.
+Las seis de `jafne pendientes`, sin cambios de forma: `medicion-de-consumo`,
+`historial-desbordado`, `workspace-broker` (ya solo servicios que **no** son repos),
+`sprints`, `rotacion-de-token` y `sincronia-entre-maquinas`.
 
 ---
 
@@ -201,14 +161,39 @@ Cuestan una hora cada una si se descubren solas.
 
 - **No pases Python por heredoc del tool Bash si el código tiene `\n` u otros escapes**: se
   desescapan por el camino y el `str.replace` no matchea. Usá Edit/Write.
-- **Los archivos del repo son CRLF**, con `core.autocrlf=true`. Git normaliza; no te
-  pelees.
+- **Tampoco pases scripts de shell con `$` o `"` por `podman machine ssh` desde PowerShell**:
+  se rompe el quoting. Escribí el script a un archivo y pasalo con `Get-Content -Raw`.
+- **Los archivos del repo son CRLF**, con `core.autocrlf=true`. Git normaliza; no te pelees.
 - **Un proceso en segundo plano muere al terminar la invocación del tool.** Para probar un
   servidor, levantalo y consultalo **en la misma llamada**.
 - **`Stop-ScheduledTask` no espera a que se suelte el puerto.** Poné `Start-Sleep 3` antes
   de `Start-ScheduledTask` o el arranque falla con exit 3 (`address in use`).
 - **`curl` en Windows usa schannel e ignora `--cacert`.** Para probar el TLS del panel usá
   `Invoke-WebRequest`, que valida contra el almacén de Windows como el navegador.
-- **Los tests no deben invocar la CLI de verdad**: gastarían el saldo del Usuario en cada
-  corrida. Mirá `tests/test_adaptador_anthropic.py` — sustituye `subprocess.run` con la
-  forma real del JSON.
+- **El `podman.exe` de Windows es un cliente remoto.** Lo que tiene que resolverse del lado
+  donde están los archivos y los procesos —construir una imagen, leer un registro, listar
+  runtimes— va por `podman machine ssh`. Ya está resuelto en `nucleo/motor.py`.
+- **Las redes de Podman NO aíslan por defecto.** Dos redes distintas se alcanzan por IP
+  directa: medido el 2026-08-19, un contenedor de un proyecto pingueó el de otro con 0% de
+  pérdida. Hace falta `--opt isolate=true`, que ya está en `asegurar_red`. Como esa función
+  es idempotente, **una red creada antes de ese arreglo sigue sin aislar**: hay que borrarla
+  para que se rehaga.
+- **`podman exec` no funciona con `krun`** — contesta `the handler does not support exec`.
+  Hoy no molesta porque JAFNE usa el default (`crun`) desde ADR-0045, pero si alguien
+  reintroduce `krun` se topa con esto. Y ojo con el salto que ya se hizo mal una vez: eso
+  descarta **una forma de entrar**, no la persistencia del contenedor.
+- **`podman pause` y `unpause` funcionan con los dos runtimes**, y montar un repo del disco
+  de Windows desde `/mnt/c` también. Los dos verificados el 2026-08-19, así que no hace
+  falta volver a averiguarlo.
+- **`acceptEdits` no alcanza para que el agente *use* las herramientas MCP.** Las **ve** y
+  las lista, pero la llamada queda esperando una aprobación que desde el panel no hay quién
+  dar. Hay que permitirlas con `--allowed-tools mcp__<servidor>`. Ya está resuelto en
+  `nucleo/mcp.py`; el síntoma, si alguien lo saca, es un agente que dice "la herramienta
+  está disponible pero no me dejaron ejecutarla".
+- **`--mcp-config` acepta el JSON como string**, no solo como archivo. Se pasa inline: un
+  archivo temporal por conversación habría que limpiarlo.
+- **`claude` no se puede invocar desde `subprocess` en Windows**: hay que llamar a
+  `claude.cmd`, o `CreateProcess` falla con *"no es una aplicación Win32 válida"*.
+- **Los tests no deben invocar la CLI de verdad ni tocar Podman**: gastarían el saldo del
+  Usuario y no correrían en una máquina sin motor. Mirá `tests/test_adaptador_anthropic.py`
+  y `tests/test_workspaces.py` — los dos sustituyen el subproceso con la forma real.
